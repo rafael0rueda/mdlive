@@ -83,11 +83,17 @@ local ok, err = xpcall(function()
   -- Live stream: connect, edit the buffer, move the cursor, then read what arrived.
   local stream = curl("/events/" .. buf, { "-N" }, 1.5)
   vim.wait(300)
+  opened = nil
+  vim.cmd("MdLive")
+  check("MdLive reuses a connected tab", opened == nil, opened)
   vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "# Edited live" })
   vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
   vim.api.nvim_win_set_cursor(0, { 3, 0 })
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
   local _, events = stream()
+  vim.wait(200)
+  vim.cmd("MdLive")
+  check("MdLive opens a tab again once it is closed", opened ~= nil)
 
   check("stream sends theme", events:find("event: theme", 1, true))
   check("stream sends initial content", events:find("# mdlive demo", 1, true))

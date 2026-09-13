@@ -70,6 +70,25 @@
     return defaultFence(tokens, idx, options, env, self);
   };
 
+  // YAML (---) or TOML (+++) front matter at the top of the file. Its lines are
+  // blanked out instead of removed so source line numbers stay correct.
+  function splitFrontMatter(text) {
+    const match = /^(---|\+\+\+)[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?(?:\1|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(text);
+    if (!match) return { frontMatter: null, body: text };
+    const newlines = match[0].split("\n").length - 1;
+    return {
+      frontMatter: { lang: match[1] === "---" ? "yaml" : "toml", code: match[2] || "" },
+      body: "\n".repeat(newlines) + text.slice(match[0].length),
+    };
+  }
+
+  function frontMatterHtml({ lang, code }) {
+    const highlighted = hljs.getLanguage(lang)
+      ? hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+      : md.utils.escapeHtml(code);
+    return `<details class="front-matter" data-line="0"><summary>Front matter</summary><pre><code>${highlighted}</code></pre></details>\n`;
+  }
+
   // Relative to the markdown file, as opposed to "https:", "/absolute" or "#anchor".
   const isRelative = (url) => !/^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(url);
   const isMarkdown = (path) => /\.(?:md|markdown|mdown|mkdn?)$/i.test(path);
@@ -152,6 +171,8 @@
 
   function syncAttributes(target, source) {
     for (const { name } of Array.from(target.attributes)) {
+      // Keep a <details> the reader expanded open across re-renders.
+      if (name === "open" && target.tagName === "DETAILS") continue;
       if (!source.hasAttribute(name)) target.removeAttribute(name);
     }
     for (const { name, value } of Array.from(source.attributes)) {
@@ -199,7 +220,9 @@
     const template = document.createElement("template");
     // HTML inside the markdown is untrusted: drop scripts, event handlers, iframes, ...
     const env = { mermaid: [] };
-    template.innerHTML = DOMPurify.sanitize(md.render(text, env), { ADD_TAGS: ["semantics", "annotation"] });
+    const { frontMatter, body } = splitFrontMatter(text);
+    const html = (frontMatter ? frontMatterHtml(frontMatter) : "") + md.render(body, env);
+    template.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ["semantics", "annotation"] });
     postProcess(template.content, env);
     patch(contentEl, template.content);
     queueMermaid();

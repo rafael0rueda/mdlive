@@ -324,6 +324,17 @@ function M.is_running()
   return state.server ~= nil
 end
 
+--- Number of browser tabs connected to a buffer's preview.
+function M.client_count(bufnr)
+  local count = 0
+  for sock in pairs(state.clients[bufnr] or {}) do
+    if not sock:is_closing() then
+      count = count + 1
+    end
+  end
+  return count
+end
+
 function M.broadcast(bufnr, event, data)
   local set = state.clients[bufnr]
   if not set then

@@ -1,3 +1,9 @@
+---
+title: mdlive demo
+tags: [neovim, markdown]
+draft: false
+---
+
 # mdlive demo
 
 Edit this file with `:MdLive` running and watch the browser update.

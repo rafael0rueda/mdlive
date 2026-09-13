@@ -174,6 +174,10 @@ function M.open(bufnr)
     attach(bufnr)
   end
   local url = server.url(bufnr)
+  if server.client_count(bufnr) > 0 then
+    notify("preview already open at " .. url)
+    return
+  end
   open_browser(url)
   notify("previewing at " .. url)
 end

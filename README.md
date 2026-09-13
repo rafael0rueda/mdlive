@@ -11,6 +11,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Tables, task lists, heading anchors and relative images
 - Relative links: markdown files open in Neovim and the preview follows them;
   other files open in a new tab
+- YAML (`---`) and TOML (`+++`) front matter shown as a collapsible block
 - Works offline: all browser libraries are bundled in `app/vendor`
 
 Requires Neovim 0.11+.
@@ -47,11 +48,11 @@ require("mdlive").setup()
 
 ## Usage
 
-| Command         | Action                                       |
-| --------------- | -------------------------------------------- |
-| `:MdLive`       | Start the preview and open it in the browser |
-| `:MdLiveStop`   | Stop the preview of the current buffer       |
-| `:MdLiveToggle` | Toggle the preview                           |
+| Command         | Action                                                              |
+| --------------- | ------------------------------------------------------------------- |
+| `:MdLive`       | Start the preview and open it in the browser (reuses an open tab)   |
+| `:MdLiveStop`   | Stop the preview of the current buffer                              |
+| `:MdLiveToggle` | Toggle the preview                                                  |
 
 Example mapping:
 
