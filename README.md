@@ -5,6 +5,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 
 - Pure Lua: the HTTP server runs inside Neovim (`vim.uv`), nothing to install
 - Updates while typing (debounced), pushed with Server-Sent Events
+- One tab follows you: switching to another markdown buffer switches the preview
 - Scroll sync with the cursor
 - Code highlighting (highlight.js) using your colorscheme's syntax colors
 - Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
@@ -51,7 +52,7 @@ require("mdlive").setup()
 | Command         | Action                                                              |
 | --------------- | ------------------------------------------------------------------- |
 | `:MdLive`       | Start the preview and open it in the browser (reuses an open tab)   |
-| `:MdLiveStop`   | Stop the preview of the current buffer                              |
+| `:MdLiveStop`   | Stop the preview (in follow mode, from any buffer)                  |
 | `:MdLiveToggle` | Toggle the preview                                                  |
 
 Example mapping:
@@ -74,6 +75,7 @@ require("mdlive").setup({
   debounce_ms = 150,    -- delay after the last edit before updating
   auto_open = false,    -- open the preview when a buffer of `filetypes` is opened
   filetypes = { "markdown" },
+  follow = true,        -- one tab switches to the markdown buffer you are in
   scroll_sync = true,   -- scroll the preview with the cursor
   follow_theme = true,  -- use the Neovim colorscheme in the preview
 })

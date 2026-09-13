@@ -131,8 +131,45 @@ local ok, err = xpcall(function()
   check("link back reuses the demo buffer", code == 200 and vim.api.nvim_get_current_buf() == buf, body)
 
   require("mdlive").close(guide)
+  vim.wait(200)
+
+  -- Follow mode: a connected tab switches to the markdown buffer you enter.
+  opened = nil
+  local follow_stream = curl("/events/" .. buf, { "-N" }, 1.5)
+  vim.wait(300)
+  vim.cmd.edit(root .. "/examples/docs/guide.md")
+  guide = vim.api.nvim_get_current_buf()
+  local _, follow_events = follow_stream()
+  check(
+    "follow switches the tab to the entered buffer",
+    follow_events:find('event: switch\ndata: {"bufnr":' .. guide .. "}", 1, true),
+    follow_events
+  )
+  check("follow reuses the tab", opened == nil, opened)
+  check(
+    "follow drops the previous preview",
+    require("mdlive").is_open(guide) and not require("mdlive").is_open(buf)
+  )
+
+  -- LSP hover popups are markdown buffers in floating windows: not followed.
+  local float_stream = curl("/events/" .. guide, { "-N" }, 1)
+  vim.wait(300)
+  local scratch = vim.api.nvim_create_buf(false, true)
+  vim.bo[scratch].filetype = "markdown"
+  local float = vim.api.nvim_open_win(scratch, true, { relative = "editor", row = 1, col = 1, width = 20, height = 3 })
+  vim.api.nvim_win_close(float, true)
+  local _, float_events = float_stream()
+  check(
+    "follow ignores floating windows",
+    not float_events:find("event: switch", 1, true) and require("mdlive").is_open(guide),
+    float_events
+  )
+
+  -- :MdLiveStop from a buffer that is not previewed stops the followed preview.
+  vim.cmd.enew()
   vim.cmd("MdLiveStop")
   vim.wait(400)
+  check("MdLiveStop stops the followed preview from anywhere", not require("mdlive").is_open(guide))
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)
 end, debug.traceback)

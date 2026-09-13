@@ -13,6 +13,9 @@ M.defaults = {
   -- Open the preview automatically for buffers with one of `filetypes`.
   auto_open = false,
   filetypes = { "markdown" },
+  -- One tab follows you: entering another buffer of `filetypes` switches the
+  -- open preview to it instead of needing a tab per file.
+  follow = true,
   -- Scroll the preview to follow the cursor.
   scroll_sync = true,
   -- Use the colors of the current Neovim colorscheme in the preview.

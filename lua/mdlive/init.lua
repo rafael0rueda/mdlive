@@ -5,6 +5,7 @@ local theme = require("mdlive.theme")
 local M = {}
 
 local previews = {} -- [bufnr] = { group = augroup id, timer = uv timer }
+local active = nil -- follow mode: the buffer the preview tabs are showing
 local api = vim.api
 
 local function notify(msg, level)
@@ -165,14 +166,65 @@ local function start_server()
   return port ~= nil
 end
 
+local function buf_label(bufnr)
+  local name = vim.fn.fnamemodify(api.nvim_buf_get_name(bufnr), ":t")
+  return name ~= "" and name or "[No Name]"
+end
+
+-- Stops syncing a buffer without telling its tabs.
+local function detach(bufnr)
+  local preview = previews[bufnr]
+  if not preview then
+    return
+  end
+  previews[bufnr] = nil
+  pcall(api.nvim_del_augroup_by_id, preview.group)
+  preview.timer:stop()
+  preview.timer:close()
+  if active == bufnr then
+    active = nil
+  end
+end
+
+local function is_following()
+  return config.options.follow and active ~= nil and previews[active] ~= nil and server.client_count(active) > 0
+end
+
+-- Follow mode: point the tabs showing the active buffer at `bufnr` instead.
+local function follow(bufnr)
+  local from = active
+  if not previews[bufnr] then
+    attach(bufnr)
+  end
+  active = bufnr
+  server.broadcast(from, "switch", { bufnr = bufnr })
+  -- The tabs reconnect to the new buffer; drop the old preview once the event is out.
+  vim.defer_fn(function()
+    if active ~= from and previews[from] then
+      server.disconnect(from)
+      detach(from)
+    end
+  end, 100)
+end
+
 function M.open(bufnr)
   bufnr = resolve_buf(bufnr)
   if not start_server() then
     return
   end
+  if config.options.follow and active and active ~= bufnr then
+    if is_following() then
+      follow(bufnr)
+      notify("preview switched to " .. buf_label(bufnr))
+      return
+    end
+    -- The followed buffer's tab was closed; a new tab takes over.
+    detach(active)
+  end
   if not previews[bufnr] then
     attach(bufnr)
   end
+  active = bufnr
   local url = server.url(bufnr)
   if server.client_count(bufnr) > 0 then
     notify("preview already open at " .. url)
@@ -183,15 +235,15 @@ function M.open(bufnr)
 end
 
 function M.close(bufnr)
+  -- From the commands (no buffer given), follow mode stops the followed preview from anywhere.
+  if bufnr == nil and config.options.follow and not previews[api.nvim_get_current_buf()] then
+    bufnr = active
+  end
   bufnr = resolve_buf(bufnr)
-  local preview = previews[bufnr]
-  if not preview then
+  if not previews[bufnr] then
     return
   end
-  previews[bufnr] = nil
-  pcall(api.nvim_del_augroup_by_id, preview.group)
-  preview.timer:stop()
-  preview.timer:close()
+  detach(bufnr)
 
   server.broadcast(bufnr, "close", vim.empty_dict())
   -- Give the "close" event a moment to reach the browser before hanging up.
@@ -246,6 +298,21 @@ api.nvim_create_autocmd("OptionSet", {
   pattern = "background",
   callback = function()
     send_theme()
+  end,
+})
+
+-- Follow mode: the preview tab moves to the markdown buffer you enter.
+api.nvim_create_autocmd({ "BufEnter", "FileType" }, {
+  group = global_group,
+  callback = function(ev)
+    if ev.buf == active or ev.buf ~= api.nvim_get_current_buf() or not is_following() then
+      return
+    end
+    local wanted = vim.tbl_contains(config.options.filetypes, vim.bo[ev.buf].filetype)
+    -- Skip special buffers such as LSP hover popups, which are markdown too.
+    if wanted and vim.bo[ev.buf].buftype == "" and api.nvim_win_get_config(0).relative == "" then
+      follow(ev.buf)
+    end
   end,
 })
 

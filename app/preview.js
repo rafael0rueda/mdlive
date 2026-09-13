@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const bufnr = location.pathname.match(/\/preview\/(\d+)/)[1];
+  let bufnr = location.pathname.match(/\/preview\/(\d+)/)[1];
   const root = document.documentElement;
   const contentEl = document.getElementById("content");
   const statusEl = document.getElementById("status");
@@ -358,6 +358,8 @@
     if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     const { openPath, openHash } = link.dataset;
+    // Neovim changes buffer while handling this; don't also follow its "switch" event.
+    navigating = true;
     try {
       const response = await fetch(`/open/${bufnr}?path=${encodeURIComponent(openPath)}`, {
         method: "POST",
@@ -367,33 +369,52 @@
       if (!response.ok) throw new Error(data.error);
       location.href = data.url + openHash;
     } catch (err) {
+      navigating = false;
       setStatus(`Could not open ${openPath}: ${err.message}`);
       setTimeout(() => setStatus(null), 4000);
     }
   });
 
-  const events = new EventSource(`/events/${bufnr}`);
+  let navigating = false;
 
-  events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
-  events.addEventListener("content", (e) => {
-    const data = JSON.parse(e.data);
-    document.title = `${data.name || "[No Name]"} · mdlive`;
-    render(data.text);
-  });
-  events.addEventListener("cursor", (e) => {
-    if (ignoreCursor) {
+  function connect() {
+    const events = new EventSource(`/events/${bufnr}`);
+
+    events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
+    events.addEventListener("content", (e) => {
+      const data = JSON.parse(e.data);
+      document.title = `${data.name || "[No Name]"} · mdlive`;
+      render(data.text);
+    });
+    events.addEventListener("cursor", (e) => {
+      if (ignoreCursor) {
+        ignoreCursor = false;
+        return;
+      }
+      cursor = JSON.parse(e.data);
+      scrollToLine(cursor);
+    });
+    // Follow mode: Neovim moved to another markdown buffer, so show that one.
+    events.addEventListener("switch", (e) => {
+      if (navigating) return;
+      events.close();
+      bufnr = String(JSON.parse(e.data).bufnr);
+      history.replaceState(null, "", `/preview/${bufnr}`);
+      cursor = null;
+      pendingAnchor = null;
       ignoreCursor = false;
-      return;
-    }
-    cursor = JSON.parse(e.data);
-    scrollToLine(cursor);
-  });
-  events.addEventListener("close", () => {
-    events.close();
-    setStatus("Preview stopped in Neovim");
-  });
-  events.onopen = () => setStatus(null);
-  events.onerror = () => {
-    setStatus(events.readyState === EventSource.CLOSED ? "Disconnected from Neovim" : "Reconnecting to Neovim…");
-  };
+      window.scrollTo(0, 0);
+      connect();
+    });
+    events.addEventListener("close", () => {
+      events.close();
+      setStatus("Preview stopped in Neovim");
+    });
+    events.onopen = () => setStatus(null);
+    events.onerror = () => {
+      setStatus(events.readyState === EventSource.CLOSED ? "Disconnected from Neovim" : "Reconnecting to Neovim…");
+    };
+  }
+
+  connect();
 })();
