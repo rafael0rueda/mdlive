@@ -1,5 +1,7 @@
 # mdlive
 
+[![CI](https://github.com/rafael0rueda/mdlive/actions/workflows/ci.yml/badge.svg)](https://github.com/rafael0rueda/mdlive/actions/workflows/ci.yml)
+
 Live browser preview of Markdown buffers. The preview updates while you type,
 follows your cursor and uses the colors of your Neovim colorscheme.
 
@@ -15,7 +17,8 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - YAML (`---`) and TOML (`+++`) front matter shown as a collapsible block
 - Works offline: all browser libraries are bundled in `app/vendor`
 
-Requires Neovim 0.11+.
+Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
+`:checkhealth mdlive` checks your setup.
 
 ## Installation
 
@@ -112,7 +115,11 @@ for example a README in a repository you just cloned:
 
 ```sh
 nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
+stylua --check lua plugin tests
 ```
+
+CI runs both on Neovim 0.11, stable and nightly, and checks that the help
+tags in `doc/` build without errors.
 
 ## License
 

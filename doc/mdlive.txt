@@ -1,0 +1,203 @@
+*mdlive.txt*  Live browser preview for Markdown buffers
+
+Author:  Rafael Rueda
+License: MIT
+Website: https://github.com/rafael0rueda/mdlive
+
+==============================================================================
+CONTENTS                                                     *mdlive-contents*
+
+  1. Introduction ............................... |mdlive-introduction|
+  2. Requirements ............................... |mdlive-requirements|
+  3. Installation ............................... |mdlive-installation|
+  4. Commands ................................... |mdlive-commands|
+  5. Configuration .............................. |mdlive-configuration|
+  6. Lua API .................................... |mdlive-api|
+  7. Features ................................... |mdlive-features|
+  8. Security ................................... |mdlive-security|
+  9. Health check ............................... |mdlive-health|
+
+==============================================================================
+1. INTRODUCTION                                 *mdlive* *mdlive-introduction*
+
+mdlive shows a live preview of a Markdown buffer in your browser. The preview
+updates while you type, follows your cursor and uses the colors of your
+colorscheme.
+
+The HTTP server runs inside Neovim and every browser library is bundled with
+the plugin, so there is nothing else to install and it works offline.
+
+==============================================================================
+2. REQUIREMENTS                                          *mdlive-requirements*
+
+- Neovim 0.11 or newer
+- A web browser
+
+==============================================================================
+3. INSTALLATION                                          *mdlive-installation*
+
+With lazy.nvim: >lua
+    {
+      "rafael0rueda/mdlive",
+      ft = "markdown",
+      cmd = { "MdLive", "MdLiveStop", "MdLiveToggle" },
+      opts = {},
+    }
+<
+Calling |mdlive.setup()| is optional: the commands work with the defaults.
+
+==============================================================================
+4. COMMANDS                                                  *mdlive-commands*
+
+:MdLive                                                              *:MdLive*
+    Start the preview of the current buffer and open it in the browser.
+    If a tab is already connected to the buffer, only its URL is printed.
+    With |mdlive-follow|, an open tab switches to the current buffer instead
+    of a new tab being opened.
+
+:MdLiveStop                                                      *:MdLiveStop*
+    Stop the preview of the current buffer. The browser tab shows that the
+    preview stopped. With |mdlive-follow|, this stops the followed preview
+    from any buffer.
+
+:MdLiveToggle                                                  *:MdLiveToggle*
+    Start or stop the preview of the current buffer.
+
+Example mapping: >lua
+    vim.keymap.set("n", "<leader>mv", "<cmd>MdLiveToggle<cr>",
+      { desc = "Markdown live preview" })
+<
+==============================================================================
+5. CONFIGURATION                                        *mdlive-configuration*
+
+Pass options to |mdlive.setup()|. These are the defaults: >lua
+    require("mdlive").setup({
+      host = "127.0.0.1",
+      port = 0,
+      browser = nil,
+      debounce_ms = 150,
+      auto_open = false,
+      filetypes = { "markdown" },
+      follow = true,
+      scroll_sync = true,
+      follow_theme = true,
+    })
+<
+host                                                      *mdlive-config-host*
+    Type: `string`, default: `"127.0.0.1"`
+    Address the server binds to. Keep it on a loopback address: the preview
+    also serves the files next to your Markdown.
+
+port                                                      *mdlive-config-port*
+    Type: `integer`, default: `0`
+    Port of the server. `0` picks a free port.
+
+browser                                                *mdlive-config-browser*
+    Type: `nil`, `string`, `string[]` or `fun(url: string)`, default: `nil`
+    How the preview is opened. `nil` uses the system default browser through
+    |vim.ui.open()|. A string such as `"firefox"` or a list such as
+    `{ "firefox", "--new-window" }` is run with the URL appended. A function
+    receives the URL.
+
+debounce_ms                                        *mdlive-config-debounce_ms*
+    Type: `integer`, default: `150`
+    Milliseconds to wait after the last change before updating the preview.
+
+auto_open                                            *mdlive-config-auto_open*
+    Type: `boolean`, default: `false`
+    Start the preview when a buffer with one of the `filetypes` is opened.
+
+filetypes                                            *mdlive-config-filetypes*
+    Type: `string[]`, default: `{ "markdown" }`
+    Filetypes used by `auto_open` and `follow`.
+
+follow                                                  *mdlive-config-follow*
+    Type: `boolean`, default: `true`
+    Use a single tab that follows the buffer you are in. See |mdlive-follow|.
+
+scroll_sync                                        *mdlive-config-scroll_sync*
+    Type: `boolean`, default: `true`
+    Scroll the preview to follow the cursor.
+
+follow_theme                                      *mdlive-config-follow_theme*
+    Type: `boolean`, default: `true`
+    Use the colors of the current colorscheme in the preview. When `false`,
+    the preview uses a light or dark theme based on the browser settings.
+
+==============================================================================
+6. LUA API                                                        *mdlive-api*
+
+mdlive.setup({opts})                                          *mdlive.setup()*
+    Set the options, see |mdlive-configuration|. Only needed to change them.
+
+mdlive.open({bufnr})                                           *mdlive.open()*
+    Same as |:MdLive| for {bufnr}. `nil` or `0` means the current buffer.
+
+mdlive.close({bufnr})                                         *mdlive.close()*
+    Stop the preview of {bufnr}. Without {bufnr} it behaves like
+    |:MdLiveStop|, including stopping the followed preview.
+
+mdlive.toggle({bufnr})                                       *mdlive.toggle()*
+    Same as |:MdLiveToggle| for {bufnr}.
+
+mdlive.is_open({bufnr})                                     *mdlive.is_open()*
+    Return `true` if {bufnr} is being previewed.
+
+==============================================================================
+7. FEATURES                                                  *mdlive-features*
+
+Live update                                               *mdlive-live-update*
+    The buffer is sent to the browser while you type, without saving. Only
+    the parts of the page that changed are updated, so images and diagrams do
+    not flicker.
+
+Follow mode                                                    *mdlive-follow*
+    With `follow` enabled, the connected tab switches to the Markdown buffer
+    you enter, for example with |:edit|, |:buffer| or by changing windows.
+    Buffers of other filetypes, floating windows and special buffers (such
+    as LSP hover popups) are ignored, so the preview stays where it is.
+
+Scroll sync                                               *mdlive-scroll-sync*
+    The preview scrolls to keep the block under the cursor in view.
+
+Theme                                                           *mdlive-theme*
+    Colors come from highlight groups such as |hl-Normal|, `@markup.heading`,
+    `@keyword`, `@string` and `@comment`, and are sent again when the
+    colorscheme or 'background' changes.
+
+Markdown                                                     *mdlive-markdown*
+    CommonMark with tables, strikethrough, task lists and heading anchors.
+    Code blocks are highlighted, `$inline$` and `$$block$$` math is rendered
+    with KaTeX, and ```mermaid code blocks are drawn as diagrams.
+
+Front matter                                             *mdlive-front-matter*
+    YAML (`---`) or TOML (`+++`) front matter at the top of the file is shown
+    as a collapsed block.
+
+Links and images                                                *mdlive-links*
+    Relative images are loaded from the directory of the Markdown file.
+    Clicking a relative link to a Markdown file opens that file in Neovim and
+    the tab shows its preview. Links to other local files open the raw file
+    in a new tab, and web links open in a new tab.
+
+==============================================================================
+8. SECURITY                                                  *mdlive-security*
+
+Markdown can contain raw HTML, for example in a README of a repository you
+just cloned, so the preview treats it as untrusted:
+
+- The HTML is sanitized with DOMPurify, and a Content-Security-Policy only
+  allows the plugin's own scripts, so embedded scripts never run.
+- Files are served only from the directory of the Markdown file and the
+  current working directory, in a sandbox that blocks scripts.
+- The server rejects requests with a non-local Host header. Opening a linked
+  file in Neovim needs a same-origin request, so other websites cannot do it.
+
+==============================================================================
+9. HEALTH CHECK                                                *mdlive-health*
+
+Run `:checkhealth mdlive` to check the Neovim version, the bundled files, your
+options, whether the server can listen on the configured address, and which
+command opens the browser.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

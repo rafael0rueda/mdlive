@@ -82,9 +82,13 @@ local function attach(bufnr)
     buffer = bufnr,
     callback = function()
       timer:stop()
-      timer:start(config.options.debounce_ms, 0, vim.schedule_wrap(function()
-        send_content(bufnr)
-      end))
+      timer:start(
+        config.options.debounce_ms,
+        0,
+        vim.schedule_wrap(function()
+          send_content(bufnr)
+        end)
+      )
     end,
   })
   api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufEnter" }, {
@@ -208,6 +212,10 @@ local function follow(bufnr)
 end
 
 function M.open(bufnr)
+  if vim.fn.has("nvim-0.11") == 0 then
+    notify("requires Neovim 0.11 or newer (see :checkhealth mdlive)", vim.log.levels.ERROR)
+    return
+  end
   bufnr = resolve_buf(bufnr)
   if not start_server() then
     return

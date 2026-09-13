@@ -2,6 +2,9 @@
 --   nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
 local root = vim.fn.getcwd()
 local failures = 0
+-- The example files may be open in another Neovim (or a parallel test run);
+-- swap file prompts would make switching buffers fail.
+vim.o.swapfile = false
 
 local function check(name, ok, detail)
   if ok then
@@ -107,7 +110,10 @@ local ok, err = xpcall(function()
   -- Clicking relative markdown links in the preview.
   local open = "/open/" .. buf .. "?path="
   local same_origin = { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: " .. base }
-  check("open link needs custom header", get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "Origin: " .. base }) == 403)
+  check(
+    "open link needs custom header",
+    get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "Origin: " .. base }) == 403
+  )
   check(
     "open link rejects other origins",
     get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: http://evil.example" }) == 403
@@ -146,10 +152,7 @@ local ok, err = xpcall(function()
     follow_events
   )
   check("follow reuses the tab", opened == nil, opened)
-  check(
-    "follow drops the previous preview",
-    require("mdlive").is_open(guide) and not require("mdlive").is_open(buf)
-  )
+  check("follow drops the previous preview", require("mdlive").is_open(guide) and not require("mdlive").is_open(buf))
 
   -- LSP hover popups are markdown buffers in floating windows: not followed.
   local float_stream = curl("/events/" .. guide, { "-N" }, 1)
@@ -172,6 +175,22 @@ local ok, err = xpcall(function()
   check("MdLiveStop stops the followed preview from anywhere", not require("mdlive").is_open(guide))
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)
+
+  vim.cmd("checkhealth mdlive")
+  -- Newer Neovim versions fill the report asynchronously.
+  local function health_report()
+    return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+  end
+  vim.wait(5000, function()
+    return health_report():find("mdlive: browser", 1, true) ~= nil
+  end, 20)
+  local report = health_report()
+  check(
+    "checkhealth runs every section",
+    report:find("mdlive: installation", 1, true) and report:find("mdlive: browser", 1, true),
+    report
+  )
+  check("checkhealth reports no errors", not report:find("ERROR", 1, true), report)
 end, debug.traceback)
 
 if not ok then

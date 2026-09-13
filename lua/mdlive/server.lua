@@ -324,6 +324,10 @@ function M.is_running()
   return state.server ~= nil
 end
 
+function M.port()
+  return state.port
+end
+
 --- Number of browser tabs connected to a buffer's preview.
 function M.client_count(bufnr)
   local count = 0
