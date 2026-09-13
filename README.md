@@ -1,4 +1,4 @@
-# mdlive.nvim
+# mdlive
 
 Live browser preview of Markdown buffers. The preview updates while you type,
 follows your cursor and uses the colors of your Neovim colorscheme.
@@ -19,17 +19,27 @@ Requires Neovim 0.11+.
 
 ```lua
 {
-  dir = "~/Workspace/Claude/plugin_nvim_markdown", -- or your git URL
+  "rafael0rueda/mdlive",
   ft = "markdown",
   cmd = { "MdLive", "MdLiveToggle" },
   opts = {},
 }
 ```
 
-Without a plugin manager, add the directory to `runtimepath`:
+Without a plugin manager, clone the repository and add it to `runtimepath`:
+
+```sh
+git clone https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
+```
 
 ```lua
-vim.opt.rtp:prepend("~/Workspace/Claude/plugin_nvim_markdown")
+require("mdlive").setup()
+```
+
+Or from any directory:
+
+```lua
+vim.opt.rtp:prepend("/path/to/mdlive")
 require("mdlive").setup()
 ```
 
@@ -89,7 +99,19 @@ are rejected.
 nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
 ```
 
-## Bundled libraries
+## License
 
-markdown-it 15.0.2, highlight.js 11.12.0, KaTeX 0.18.7, markdown-it-texmath
-1.0.0 and Mermaid 12.0.0, each under its own MIT license.
+[MIT](LICENSE) © Rafael Rueda
+
+### Bundled libraries
+
+The browser libraries in `app/vendor` keep their own licenses, included in
+`app/vendor/licenses`:
+
+| Library             | Version | License      |
+| ------------------- | ------- | ------------ |
+| markdown-it         | 15.0.2  | MIT          |
+| markdown-it-texmath | 1.0.0   | MIT          |
+| KaTeX               | 0.18.7  | MIT          |
+| Mermaid             | 12.0.0  | MIT          |
+| highlight.js        | 11.12.0 | BSD-3-Clause |
