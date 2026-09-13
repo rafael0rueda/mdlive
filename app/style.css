@@ -1,0 +1,304 @@
+/* Defaults; Neovim overrides these with inline variables on <html>. */
+:root,
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #59636e;
+  --border: #d1d9e0;
+  --surface: #f6f8fa;
+  --selection: #bbdfff;
+  --link: #0969da;
+  --quote: #59636e;
+  --code-inline: #1f2328;
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-comment: #6e7781;
+  --syn-number: #0550ae;
+  --syn-constant: #0550ae;
+  --syn-function: #8250df;
+  --syn-type: #953800;
+  --syn-builtin: #0550ae;
+  --syn-variable: #953800;
+  --syn-attribute: #0550ae;
+  --syn-tag: #116329;
+  --syn-operator: #cf222e;
+  --syn-meta: #0550ae;
+  --syn-added: #116329;
+  --syn-deleted: #82071e;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --muted: #9198a1;
+  --border: #3d444d;
+  --surface: #151b23;
+  --selection: #264f78;
+  --link: #4493f8;
+  --quote: #9198a1;
+  --code-inline: #e6edf3;
+  --syn-keyword: #ff7b72;
+  --syn-string: #a5d6ff;
+  --syn-comment: #8b949e;
+  --syn-number: #79c0ff;
+  --syn-constant: #79c0ff;
+  --syn-function: #d2a8ff;
+  --syn-type: #ffa657;
+  --syn-builtin: #79c0ff;
+  --syn-variable: #ffa657;
+  --syn-attribute: #79c0ff;
+  --syn-tag: #7ee787;
+  --syn-operator: #ff7b72;
+  --syn-meta: #79c0ff;
+  --syn-added: #aff5b4;
+  --syn-deleted: #ffdcd7;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+::selection {
+  background: var(--selection);
+}
+
+#status {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 13px/1.4 system-ui, sans-serif;
+}
+
+.markdown-body {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 40px 50vh;
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  word-wrap: break-word;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body :is(p, blockquote, ul, ol, dl, table, pre, details, .mermaid-block, .katex-display) {
+  margin: 0 0 16px;
+}
+
+.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 24px 0 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-body h1 { font-size: 2em; color: var(--h1, var(--fg)); }
+.markdown-body h2 { font-size: 1.5em; color: var(--h2, var(--fg)); }
+.markdown-body h3 { font-size: 1.25em; color: var(--h3, var(--fg)); }
+.markdown-body h4 { font-size: 1em; color: var(--h4, var(--fg)); }
+.markdown-body h5 { font-size: 0.875em; color: var(--h5, var(--fg)); }
+.markdown-body h6 { font-size: 0.85em; color: var(--h6, var(--muted)); }
+
+.markdown-body :is(h1, h2) {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-body a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body hr {
+  height: 0.25em;
+  margin: 24px 0;
+  border: 0;
+  background: var(--border);
+}
+
+.markdown-body blockquote {
+  padding: 0 1em;
+  border-left: 0.25em solid var(--border);
+  color: var(--quote);
+}
+
+.markdown-body :is(ul, ol) {
+  padding-left: 2em;
+}
+
+.markdown-body li + li {
+  margin-top: 0.25em;
+}
+
+.markdown-body li.task-list-item {
+  list-style: none;
+}
+
+.markdown-body li.task-list-item input {
+  margin: 0 0.4em 0 -1.4em;
+  vertical-align: middle;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  background: transparent;
+}
+
+.markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+
+.markdown-body :is(th, td) {
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+}
+
+.markdown-body th {
+  font-weight: 600;
+}
+
+.markdown-body tr:nth-child(2n) {
+  background: var(--surface);
+}
+
+.markdown-body :is(code, pre) {
+  font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 85%;
+}
+
+.markdown-body :not(pre) > code {
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--code-inline);
+}
+
+.markdown-body pre {
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  line-height: 1.45;
+}
+
+.markdown-body pre code {
+  font-size: 100%;
+}
+
+.markdown-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.markdown-body .mermaid-block {
+  display: flex;
+  justify-content: center;
+}
+
+.markdown-body .mermaid-error {
+  color: var(--syn-deleted);
+  white-space: pre-wrap;
+}
+
+/* highlight.js tokens mapped onto the Neovim syntax colors */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag {
+  color: var(--syn-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--syn-string);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+.hljs-number {
+  color: var(--syn-number);
+}
+.hljs-literal,
+.hljs-symbol,
+.hljs-variable.constant_ {
+  color: var(--syn-constant);
+}
+.hljs-title,
+.hljs-title.function_ {
+  color: var(--syn-function);
+}
+.hljs-type,
+.hljs-title.class_,
+.hljs-selector-class {
+  color: var(--syn-type);
+}
+.hljs-built_in,
+.hljs-variable.language_ {
+  color: var(--syn-builtin);
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: var(--syn-variable);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-selector-id {
+  color: var(--syn-attribute);
+}
+.hljs-tag,
+.hljs-name {
+  color: var(--syn-tag);
+}
+.hljs-operator,
+.hljs-punctuation {
+  color: var(--syn-operator);
+}
+.hljs-meta {
+  color: var(--syn-meta);
+}
+.hljs-addition {
+  color: var(--syn-added);
+}
+.hljs-deletion {
+  color: var(--syn-deleted);
+}
+.hljs-section {
+  color: var(--h1, var(--syn-function));
+  font-weight: 600;
+}
+.hljs-link {
+  color: var(--link);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
