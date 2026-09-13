@@ -9,6 +9,8 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Code highlighting (highlight.js) using your colorscheme's syntax colors
 - Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
 - Tables, task lists, heading anchors and relative images
+- Relative links: markdown files open in Neovim and the preview follows them;
+  other files open in a new tab
 - Works offline: all browser libraries are bundled in `app/vendor`
 
 Requires Neovim 0.11+.
@@ -89,9 +91,19 @@ a scroll position. Theme colors are read from highlight groups (`Normal`,
 `@keyword`, `@string`, `@markup.heading.1`, ...) and sent again on
 `ColorScheme`.
 
-Relative images and files are served only from the Markdown file's directory
-and the current working directory, and requests with a non-local `Host` header
-are rejected.
+## Security
+
+Markdown files can contain raw HTML, so the preview treats them as untrusted,
+for example a README in a repository you just cloned:
+
+- HTML is sanitized with DOMPurify, and a Content-Security-Policy only allows
+  the plugin's own scripts, so embedded scripts and event handlers never run.
+- Images and linked files are served only from the Markdown file's directory
+  and the current working directory, with a `sandbox` policy so an `.html` or
+  `.svg` file cannot run scripts either.
+- The server listens on `127.0.0.1` and rejects requests with a non-local
+  `Host` header. Opening a linked file in Neovim needs a same-origin request
+  with a custom header, so other websites cannot trigger it.
 
 ## Tests
 
@@ -108,10 +120,11 @@ nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
 The browser libraries in `app/vendor` keep their own licenses, included in
 `app/vendor/licenses`:
 
-| Library             | Version | License      |
-| ------------------- | ------- | ------------ |
-| markdown-it         | 15.0.2  | MIT          |
-| markdown-it-texmath | 1.0.0   | MIT          |
-| KaTeX               | 0.18.7  | MIT          |
-| Mermaid             | 12.0.0  | MIT          |
-| highlight.js        | 11.12.0 | BSD-3-Clause |
+| Library             | Version | License               |
+| ------------------- | ------- | --------------------- |
+| markdown-it         | 15.0.2  | MIT                   |
+| markdown-it-texmath | 1.0.0   | MIT                   |
+| KaTeX               | 0.18.7  | MIT                   |
+| Mermaid             | 12.0.0  | MIT                   |
+| highlight.js        | 11.12.0 | BSD-3-Clause          |
+| DOMPurify           | 3.4.15  | Apache-2.0 or MPL-2.0 |

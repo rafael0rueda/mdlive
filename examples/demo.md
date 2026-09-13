@@ -1,7 +1,8 @@
 # mdlive demo
 
 Edit this file with `:MdLive` running and watch the browser update.
-Jump to the [math section](#math).
+Jump to the [math section](#math) or open the [guide](docs/guide.md#install)
+in Neovim.
 
 ## Text
 

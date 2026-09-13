@@ -34,6 +34,9 @@ local mime = {
   woff2 = "font/woff2",
   ttf = "font/ttf",
   pdf = "application/pdf",
+  md = "text/plain; charset=utf-8",
+  markdown = "text/plain; charset=utf-8",
+  txt = "text/plain; charset=utf-8",
   mp4 = "video/mp4",
   webm = "video/webm",
 }
@@ -65,6 +68,8 @@ local function respond(sock, status, headers, body)
   local lines = { "HTTP/1.1 " .. status }
   headers["Content-Length"] = #body
   headers["Connection"] = "close"
+  headers["X-Content-Type-Options"] = "nosniff"
+  headers["Referrer-Policy"] = "no-referrer"
   for k, v in pairs(headers) do
     lines[#lines + 1] = k .. ": " .. v
   end
@@ -77,6 +82,29 @@ local function text(sock, status, msg)
   respond(sock, status, { ["Content-Type"] = "text/plain; charset=utf-8" }, msg)
 end
 
+local function json(sock, status, data)
+  respond(sock, status, { ["Content-Type"] = "application/json" }, vim.json.encode(data))
+end
+
+-- The preview page may only run its own bundled scripts, so HTML inside a
+-- markdown file can neither execute code nor send data anywhere.
+local page_policy = table.concat({
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https: http:",
+  "media-src 'self' data: https: http:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+}, "; ")
+
+-- Files next to the markdown are opened in a sandbox, so an .html or .svg from
+-- an untrusted repository cannot run scripts that talk to this server.
+local file_policy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
+
 -- Resolves `rel` against `dir` and returns it only if it stays inside one of `roots`.
 local function resolve(dir, rel, roots)
   local full = vim.fs.normalize(vim.fs.joinpath(dir, rel))
@@ -87,7 +115,7 @@ local function resolve(dir, rel, roots)
   end
 end
 
-local function serve_file(sock, path)
+local function serve_file(sock, path, headers)
   local f = path and io.open(path, "rb")
   local body = f and f:read("*a")
   if f then
@@ -97,10 +125,10 @@ local function serve_file(sock, path)
     return text(sock, "404 Not Found", "Not found")
   end
   local ext = (path:match("%.(%w+)$") or ""):lower()
-  respond(sock, "200 OK", {
-    ["Content-Type"] = mime[ext] or "application/octet-stream",
-    ["Cache-Control"] = "no-cache",
-  }, body)
+  headers = headers or {}
+  headers["Content-Type"] = mime[ext] or "application/octet-stream"
+  headers["Cache-Control"] = "no-cache"
+  respond(sock, "200 OK", headers, body)
 end
 
 local function frame(event, data)
@@ -130,19 +158,46 @@ local function allowed_host(value)
   return name == "localhost" or name == "127.0.0.1" or name == "::1" or name == state.host
 end
 
-local function handle(sock, method, target, host)
-  if method ~= "GET" then
-    return text(sock, "405 Method Not Allowed", "Only GET is supported")
+-- POST /open/<bufnr>?path=<relative path>: a markdown link was clicked in the preview.
+-- The custom header forces a CORS preflight, which this server never approves,
+-- so other websites cannot trigger it; the Origin check is a second guard.
+local function open_link(sock, path, target, headers)
+  local bufnr = tonumber(path:match("^/open/(%d+)$"))
+  if not bufnr then
+    return json(sock, "404 Not Found", { error = "not found" })
   end
-  if not allowed_host(host) then
+  if headers["x-mdlive"] ~= "1" or headers.origin ~= "http://" .. headers.host then
+    return json(sock, "403 Forbidden", { error = "forbidden" })
+  end
+  if not state.handlers.is_previewed(bufnr) then
+    return json(sock, "404 Not Found", { error = "no preview for this buffer" })
+  end
+  local query = "&" .. (target:match("%?([^#]*)") or "")
+  local rel = url_decode(query:match("&path=([^&]*)") or "")
+  local url, err = state.handlers.open_link(bufnr, rel)
+  if not url then
+    return json(sock, "404 Not Found", { error = err })
+  end
+  json(sock, "200 OK", { url = url })
+end
+
+local function handle(sock, method, target, headers)
+  if not allowed_host(headers.host) then
     return text(sock, "403 Forbidden", "Forbidden")
   end
 
   local path = url_decode((target:gsub("[?#].*$", "")))
   local h = state.handlers
 
+  if method == "POST" then
+    return open_link(sock, path, target, headers)
+  end
+  if method ~= "GET" then
+    return text(sock, "405 Method Not Allowed", "Method not allowed")
+  end
+
   if path:match("^/preview/%d+/?$") then
-    return serve_file(sock, vim.fs.joinpath(app_dir, "index.html"))
+    return serve_file(sock, vim.fs.joinpath(app_dir, "index.html"), { ["Content-Security-Policy"] = page_policy })
   end
 
   local bufnr = tonumber(path:match("^/events/(%d+)$"))
@@ -161,7 +216,10 @@ local function handle(sock, method, target, host)
   local b, file = path:match("^/files/(%d+)/(.+)$")
   if b then
     local dir = h.buffer_dir(tonumber(b))
-    return serve_file(sock, dir and resolve(dir, file, { dir, vim.fn.getcwd() }))
+    local full = dir and resolve(dir, file, { dir, vim.fn.getcwd() })
+    -- PDFs cannot script this origin, and browsers refuse to show them sandboxed.
+    local is_pdf = full and full:lower():match("%.pdf$")
+    return serve_file(sock, full, { ["Content-Security-Policy"] = not is_pdf and file_policy or nil })
   end
 
   text(sock, "404 Not Found", "Not found")
@@ -194,7 +252,10 @@ local function on_connection(err)
     handled = true
     local head = buf:sub(1, head_end)
     local method, target = head:match("^(%u+) (%S+) HTTP/1%.[01]\r\n")
-    local host = head:match("\r\n[Hh][Oo][Ss][Tt]:%s*([^\r\n]+)")
+    local headers = {}
+    for name, value in head:gmatch("\r\n([^:\r\n]+):[ \t]*([^\r\n]*)") do
+      headers[name:lower()] = value
+    end
     -- Handlers use the Neovim API, which is not allowed inside luv callbacks.
     vim.schedule(function()
       if sock:is_closing() then
@@ -203,7 +264,7 @@ local function on_connection(err)
       if not method then
         return text(sock, "400 Bad Request", "Bad request")
       end
-      local ok, e = pcall(handle, sock, method, target, host)
+      local ok, e = pcall(handle, sock, method, target, headers)
       if not ok then
         text(sock, "500 Internal Server Error", tostring(e))
       end
@@ -212,7 +273,8 @@ local function on_connection(err)
 end
 
 --- Starts the server. `opts` holds host, port and the handlers
---- is_previewed(bufnr), buffer_dir(bufnr) and on_subscribe(bufnr).
+--- is_previewed(bufnr), buffer_dir(bufnr), on_subscribe(bufnr) and
+--- open_link(bufnr, relative_path) -> preview url | nil, error.
 ---@return integer|nil port, string|nil error
 function M.start(opts)
   if state.server then

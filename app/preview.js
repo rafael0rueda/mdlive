@@ -8,6 +8,9 @@
 
   let mode = systemMode();
   let cursor = null;
+  // Arrived through a link like guide.md#install: scroll there instead of to the cursor.
+  let pendingAnchor = location.hash.length > 1 ? safeDecode(location.hash.slice(1)) : null;
+  let ignoreCursor = pendingAnchor !== null;
   const themeKeys = new Set();
 
   root.dataset.theme = mode;
@@ -47,18 +50,6 @@
     }
   });
 
-  // GitHub-style ids so `[link](#some-heading)` works.
-  md.core.ruler.push("heading_ids", (state) => {
-    const used = new Map();
-    state.tokens.forEach((token, i) => {
-      if (token.type !== "heading_open") return;
-      const base = slugify(state.tokens[i + 1].content);
-      const count = used.get(base) || 0;
-      used.set(base, count + 1);
-      token.attrSet("id", count ? `${base}-${count}` : base);
-    });
-  });
-
   function slugify(text) {
     return text
       .trim()
@@ -72,27 +63,63 @@
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     if (token.info.trim().split(/\s+/)[0] === "mermaid") {
-      const src = md.utils.escapeHtml(token.content);
-      return `<div class="mermaid-block" data-line="${token.map[0]}" data-src="${src}"></div>\n`;
+      // The source is attached after sanitizing: DOMPurify drops attributes containing "-->".
+      env.mermaid.push(token.content);
+      return `<div class="mermaid-block" data-line="${token.map[0]}" data-mermaid="${env.mermaid.length - 1}"></div>\n`;
     }
     return defaultFence(tokens, idx, options, env, self);
   };
 
-  function postProcess(fragment) {
+  // Relative to the markdown file, as opposed to "https:", "/absolute" or "#anchor".
+  const isRelative = (url) => !/^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(url);
+  const isMarkdown = (path) => /\.(?:md|markdown|mdown|mkdn?)$/i.test(path);
+
+  function safeDecode(text) {
+    try {
+      return decodeURIComponent(text);
+    } catch (_) {
+      return text;
+    }
+  }
+
+  // Runs after sanitizing, so everything added here comes from this script.
+  function postProcess(fragment, env) {
+    for (const block of fragment.querySelectorAll(".mermaid-block[data-mermaid]")) {
+      block.dataset.src = env.mermaid[Number(block.dataset.mermaid)] ?? "";
+      block.removeAttribute("data-mermaid");
+    }
+
     // Relative images are served from the markdown file's directory.
     for (const img of fragment.querySelectorAll("img[src]")) {
       const src = img.getAttribute("src");
-      if (!/^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(src)) {
-        img.setAttribute("src", `/files/${bufnr}/${src}`);
+      if (isRelative(src)) img.setAttribute("src", `/files/${bufnr}/${src}`);
+    }
+
+    for (const link of fragment.querySelectorAll("a[href]")) {
+      const href = link.getAttribute("href");
+      if (href.startsWith("#")) continue;
+      // Everything except in-page anchors opens in a new tab so the preview stays put.
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      if (!isRelative(href)) continue;
+
+      const [, path, hash = ""] = /^([^?#]*)(?:\?[^#]*)?(#.*)?$/.exec(href);
+      if (!path) continue;
+      // Local files are served raw; markdown files are opened in Neovim on click.
+      link.setAttribute("href", `/files/${bufnr}/${path}`);
+      if (isMarkdown(path)) {
+        link.dataset.openPath = safeDecode(path);
+        link.dataset.openHash = hash;
       }
     }
 
-    // Keep the preview tab on the preview.
-    for (const link of fragment.querySelectorAll("a[href]")) {
-      if (!link.getAttribute("href").startsWith("#")) {
-        link.target = "_blank";
-        link.rel = "noopener";
-      }
+    // GitHub-style ids so `[link](#some-heading)` works.
+    const usedIds = new Map();
+    for (const heading of fragment.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
+      const base = slugify(heading.textContent);
+      const count = usedIds.get(base) || 0;
+      usedIds.set(base, count + 1);
+      heading.id = count ? `${base}-${count}` : base;
     }
 
     // Task lists: "- [ ] todo" / "- [x] done".
@@ -170,11 +197,18 @@
 
   function render(text) {
     const template = document.createElement("template");
-    template.innerHTML = md.render(text);
-    postProcess(template.content);
+    // HTML inside the markdown is untrusted: drop scripts, event handlers, iframes, ...
+    const env = { mermaid: [] };
+    template.innerHTML = DOMPurify.sanitize(md.render(text, env), { ADD_TAGS: ["semantics", "annotation"] });
+    postProcess(template.content, env);
     patch(contentEl, template.content);
     queueMermaid();
-    if (cursor) scrollToLine(cursor);
+    if (pendingAnchor !== null) {
+      document.getElementById(pendingAnchor)?.scrollIntoView();
+      pendingAnchor = null;
+    } else if (cursor) {
+      scrollToLine(cursor);
+    }
   }
 
   // ----------------------------------------------------------------- mermaid
@@ -295,6 +329,26 @@
 
   // ------------------------------------------------------------------ events
 
+  // Relative markdown links open the file in Neovim, then this tab follows it.
+  contentEl.addEventListener("click", async (event) => {
+    const link = event.target.closest("a[data-open-path]");
+    if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    const { openPath, openHash } = link.dataset;
+    try {
+      const response = await fetch(`/open/${bufnr}?path=${encodeURIComponent(openPath)}`, {
+        method: "POST",
+        headers: { "X-MdLive": "1" },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      location.href = data.url + openHash;
+    } catch (err) {
+      setStatus(`Could not open ${openPath}: ${err.message}`);
+      setTimeout(() => setStatus(null), 4000);
+    }
+  });
+
   const events = new EventSource(`/events/${bufnr}`);
 
   events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
@@ -304,6 +358,10 @@
     render(data.text);
   });
   events.addEventListener("cursor", (e) => {
+    if (ignoreCursor) {
+      ignoreCursor = false;
+      return;
+    }
     cursor = JSON.parse(e.data);
     scrollToLine(cursor);
   });

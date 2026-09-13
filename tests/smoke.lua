@@ -63,6 +63,23 @@ local ok, err = xpcall(function()
   check("rejects foreign Host header", get("/app/preview.js", { "-H", "Host: evil.example" }) == 403)
   check("unknown buffer events 404", get("/events/99999") == 404)
 
+  local head_only = { "-o", "/dev/null", "-D", "-" }
+  local _, page_headers = get("/preview/" .. buf, head_only)
+  page_headers = page_headers:lower()
+  check(
+    "page has content security policy",
+    page_headers:find("content-security-policy: default-src 'none'; script-src 'self';", 1, true),
+    page_headers
+  )
+  local _, file_headers = get("/files/" .. buf .. "/assets/logo.svg", head_only)
+  file_headers = file_headers:lower()
+  check(
+    "local files are sandboxed",
+    file_headers:find("content-security-policy: sandbox", 1, true)
+      and file_headers:find("x-content-type-options: nosniff", 1, true),
+    file_headers
+  )
+
   -- Live stream: connect, edit the buffer, move the cursor, then read what arrived.
   local stream = curl("/events/" .. buf, { "-N" }, 1.5)
   vim.wait(300)
@@ -81,6 +98,33 @@ local ok, err = xpcall(function()
   local decoded = theme and vim.json.decode(theme)
   check("theme has colors", decoded and decoded.vars and decoded.vars.fg and decoded.mode, theme)
 
+  -- Clicking relative markdown links in the preview.
+  local open = "/open/" .. buf .. "?path="
+  local same_origin = { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: " .. base }
+  check("open link needs custom header", get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "Origin: " .. base }) == 403)
+  check(
+    "open link rejects other origins",
+    get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: http://evil.example" }) == 403
+  )
+  check("open link only opens markdown", get(open .. "assets%2Flogo.svg", same_origin) == 404)
+
+  code, body = get(open .. "docs%2Fguide.md", same_origin)
+  local guide = vim.api.nvim_get_current_buf()
+  local ok_json, data = pcall(vim.json.decode, body)
+  check(
+    "open link opens file in neovim",
+    code == 200 and vim.api.nvim_buf_get_name(guide):match("examples/docs/guide%.md$") and vim.bo[guide].buflisted,
+    body
+  )
+  check(
+    "open link returns its preview",
+    ok_json and data.url == "/preview/" .. guide and require("mdlive").is_open(guide),
+    body
+  )
+  code, body = get("/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
+  check("link back reuses the demo buffer", code == 200 and vim.api.nvim_get_current_buf() == buf, body)
+
+  require("mdlive").close(guide)
   vim.cmd("MdLiveStop")
   vim.wait(400)
   -- curl reports status 000 when nothing is listening.

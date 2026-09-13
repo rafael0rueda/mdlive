@@ -63,33 +63,12 @@ local function open_browser(url)
   end
 end
 
-local function start_server()
-  if server.is_running() then
-    return true
+local function buffer_dir(bufnr)
+  if not api.nvim_buf_is_valid(bufnr) then
+    return nil
   end
-  local port, err = server.start({
-    host = config.options.host,
-    port = config.options.port,
-    is_previewed = function(bufnr)
-      return previews[bufnr] ~= nil
-    end,
-    buffer_dir = function(bufnr)
-      if not api.nvim_buf_is_valid(bufnr) then
-        return nil
-      end
-      local name = api.nvim_buf_get_name(bufnr)
-      return name ~= "" and vim.fs.dirname(vim.fn.fnamemodify(name, ":p")) or vim.fn.getcwd()
-    end,
-    on_subscribe = function(bufnr)
-      send_theme(bufnr)
-      send_content(bufnr)
-      send_cursor(bufnr)
-    end,
-  })
-  if not port then
-    notify("failed to start server: " .. tostring(err), vim.log.levels.ERROR)
-  end
-  return port ~= nil
+  local name = api.nvim_buf_get_name(bufnr)
+  return name ~= "" and vim.fs.dirname(vim.fn.fnamemodify(name, ":p")) or vim.fn.getcwd()
 end
 
 local function attach(bufnr)
@@ -123,6 +102,67 @@ local function attach(bufnr)
       end)
     end,
   })
+end
+
+local markdown_ext = { md = true, markdown = true, mdown = true, mkd = true, mkdn = true }
+
+-- A relative markdown link was clicked in the preview: show the file in the
+-- window of the source buffer and return the preview URL for it.
+local function open_link(from_buf, rel)
+  local dir = buffer_dir(from_buf)
+  if not dir or rel == "" then
+    return nil, "invalid link"
+  end
+  local path = vim.fs.normalize(vim.fs.joinpath(dir, rel))
+  if not markdown_ext[(path:match("%.(%w+)$") or ""):lower()] then
+    return nil, "not a markdown file"
+  end
+  local stat = vim.uv.fs_stat(path)
+  if not stat or stat.type ~= "file" then
+    return nil, "file not found"
+  end
+
+  local target = vim.fn.bufadd(path)
+  local win = vim.fn.win_findbuf(from_buf)[1]
+  if win then
+    api.nvim_set_current_win(win)
+  end
+  if api.nvim_get_current_buf() ~= target then
+    local ok, err = pcall(vim.cmd, "buffer " .. target)
+    if not ok then
+      return nil, tostring(err)
+    end
+  end
+  -- bufadd() creates unlisted buffers; list it like :edit would.
+  vim.bo[target].buflisted = true
+  if not previews[target] then
+    attach(target)
+  end
+  return "/preview/" .. target
+end
+
+local function start_server()
+  if server.is_running() then
+    return true
+  end
+  local port, err = server.start({
+    host = config.options.host,
+    port = config.options.port,
+    is_previewed = function(bufnr)
+      return previews[bufnr] ~= nil
+    end,
+    buffer_dir = buffer_dir,
+    open_link = open_link,
+    on_subscribe = function(bufnr)
+      send_theme(bufnr)
+      send_content(bufnr)
+      send_cursor(bufnr)
+    end,
+  })
+  if not port then
+    notify("failed to start server: " .. tostring(err), vim.log.levels.ERROR)
+  end
+  return port ~= nil
 end
 
 function M.open(bufnr)
