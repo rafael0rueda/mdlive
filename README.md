@@ -1,4 +1,4 @@
-# markdown_preview.nvim
+# mdlive.nvim
 
 Live browser preview of Markdown buffers. The preview updates while you type,
 follows your cursor and uses the colors of your Neovim colorscheme.
@@ -21,7 +21,7 @@ Requires Neovim 0.11+.
 {
   dir = "~/Workspace/Claude/plugin_nvim_markdown", -- or your git URL
   ft = "markdown",
-  cmd = { "MarkdownPreview", "MarkdownPreviewToggle" },
+  cmd = { "MdLive", "MdLiveToggle" },
   opts = {},
 }
 ```
@@ -30,21 +30,21 @@ Without a plugin manager, add the directory to `runtimepath`:
 
 ```lua
 vim.opt.rtp:prepend("~/Workspace/Claude/plugin_nvim_markdown")
-require("markdown_preview").setup()
+require("mdlive").setup()
 ```
 
 ## Usage
 
-| Command                  | Action                                       |
-| ------------------------ | -------------------------------------------- |
-| `:MarkdownPreview`       | Start the preview and open it in the browser |
-| `:MarkdownPreviewStop`   | Stop the preview of the current buffer       |
-| `:MarkdownPreviewToggle` | Toggle the preview                           |
+| Command         | Action                                       |
+| --------------- | -------------------------------------------- |
+| `:MdLive`       | Start the preview and open it in the browser |
+| `:MdLiveStop`   | Stop the preview of the current buffer       |
+| `:MdLiveToggle` | Toggle the preview                           |
 
 Example mapping:
 
 ```lua
-vim.keymap.set("n", "<leader>mp", "<cmd>MarkdownPreviewToggle<cr>", { desc = "Markdown preview" })
+vim.keymap.set("n", "<leader>mp", "<cmd>MdLiveToggle<cr>", { desc = "Markdown preview" })
 ```
 
 Try it with `examples/demo.md`.
@@ -54,7 +54,7 @@ Try it with `examples/demo.md`.
 `setup()` is optional; these are the defaults:
 
 ```lua
-require("markdown_preview").setup({
+require("mdlive").setup({
   host = "127.0.0.1",   -- address the server binds to
   port = 0,             -- 0 = pick a free port
   browser = nil,        -- nil = system default, "firefox", { "firefox", "--new-window" } or function(url)

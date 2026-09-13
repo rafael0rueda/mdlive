@@ -300,7 +300,7 @@
   events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
   events.addEventListener("content", (e) => {
     const data = JSON.parse(e.data);
-    document.title = `${data.name || "[No Name]"} · Preview`;
+    document.title = `${data.name || "[No Name]"} · mdlive`;
     render(data.text);
   });
   events.addEventListener("cursor", (e) => {

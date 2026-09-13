@@ -1,6 +1,6 @@
-# Markdown Preview Demo
+# mdlive demo
 
-Edit this file with `:MarkdownPreview` running and watch the browser update.
+Edit this file with `:MdLive` running and watch the browser update.
 Jump to the [math section](#math).
 
 ## Text

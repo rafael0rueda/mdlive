@@ -19,7 +19,7 @@ end
 
 local ok, err = xpcall(function()
   local opened
-  require("markdown_preview").setup({
+  require("mdlive").setup({
     debounce_ms = 20,
     browser = function(url)
       opened = url
@@ -28,7 +28,7 @@ local ok, err = xpcall(function()
 
   vim.cmd.edit(root .. "/examples/demo.md")
   local buf = vim.api.nvim_get_current_buf()
-  vim.cmd("MarkdownPreview")
+  vim.cmd("MdLive")
   check("opens preview url", opened and opened:match("^http://127%.0%.0%.1:%d+/preview/" .. buf .. "$"), opened)
   local base = opened:match("^(http://[^/]+)")
 
@@ -57,7 +57,7 @@ local ok, err = xpcall(function()
   check("serves app script", get("/app/preview.js") == 200)
   check("serves katex font", get("/app/vendor/katex/fonts/KaTeX_Main-Regular.woff2") == 200)
   check("serves relative image", get("/files/" .. buf .. "/assets/logo.svg") == 200)
-  check("blocks app traversal", get("/app/../lua/markdown_preview/init.lua") == 404)
+  check("blocks app traversal", get("/app/../lua/mdlive/init.lua") == 404)
   check("blocks file traversal", get("/files/" .. buf .. "/../../../../../../etc/passwd") == 404)
   check("blocks encoded traversal", get("/files/" .. buf .. "/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd") == 404)
   check("rejects foreign Host header", get("/app/preview.js", { "-H", "Host: evil.example" }) == 403)
@@ -73,7 +73,7 @@ local ok, err = xpcall(function()
   local _, events = stream()
 
   check("stream sends theme", events:find("event: theme", 1, true))
-  check("stream sends initial content", events:find("# Markdown Preview Demo", 1, true))
+  check("stream sends initial content", events:find("# mdlive demo", 1, true))
   check("stream sends edited content", events:find("# Edited live", 1, true))
   check("stream sends cursor", events:find('"line":2', 1, true), events:match("event: cursor\ndata: [^\n]*"))
 
@@ -81,7 +81,7 @@ local ok, err = xpcall(function()
   local decoded = theme and vim.json.decode(theme)
   check("theme has colors", decoded and decoded.vars and decoded.vars.fg and decoded.mode, theme)
 
-  vim.cmd("MarkdownPreviewStop")
+  vim.cmd("MdLiveStop")
   vim.wait(400)
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)

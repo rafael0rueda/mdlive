@@ -1,6 +1,6 @@
-local config = require("markdown_preview.config")
-local server = require("markdown_preview.server")
-local theme = require("markdown_preview.theme")
+local config = require("mdlive.config")
+local server = require("mdlive.server")
+local theme = require("mdlive.theme")
 
 local M = {}
 
@@ -8,7 +8,7 @@ local previews = {} -- [bufnr] = { group = augroup id, timer = uv timer }
 local api = vim.api
 
 local function notify(msg, level)
-  vim.notify("[markdown-preview] " .. msg, level or vim.log.levels.INFO)
+  vim.notify("[mdlive] " .. msg, level or vim.log.levels.INFO)
 end
 
 local function resolve_buf(bufnr)
@@ -93,7 +93,7 @@ local function start_server()
 end
 
 local function attach(bufnr)
-  local group = api.nvim_create_augroup("MarkdownPreviewBuf" .. bufnr, { clear = true })
+  local group = api.nvim_create_augroup("MdLiveBuf" .. bufnr, { clear = true })
   local timer = vim.uv.new_timer()
   previews[bufnr] = { group = group, timer = timer }
 
@@ -176,7 +176,7 @@ end
 
 function M.setup(opts)
   config.setup(opts)
-  local group = api.nvim_create_augroup("MarkdownPreviewAutoOpen", { clear = true })
+  local group = api.nvim_create_augroup("MdLiveAutoOpen", { clear = true })
   if config.options.auto_open then
     api.nvim_create_autocmd("FileType", {
       group = group,
@@ -190,7 +190,7 @@ function M.setup(opts)
   end
 end
 
-local global_group = api.nvim_create_augroup("MarkdownPreview", { clear = true })
+local global_group = api.nvim_create_augroup("MdLive", { clear = true })
 api.nvim_create_autocmd("ColorScheme", {
   group = global_group,
   callback = function()
