@@ -11,6 +11,8 @@ local assets = {
   "app/preview.js",
   "app/style.css",
   "app/vendor/markdown-it.min.js",
+  "app/vendor/markdown-it-footnote.min.js",
+  "app/vendor/markdown-it-emoji.min.js",
   "app/vendor/highlight.min.js",
   "app/vendor/katex/katex.min.js",
   "app/vendor/katex/katex.min.css",

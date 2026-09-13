@@ -17,6 +17,14 @@ Links are detected automatically: https://neovim.io
 
 > A blockquote uses the colors of your Neovim theme.
 
+> [!NOTE]
+> GitHub alerts use your diagnostic colors.
+
+> [!WARNING]
+> Double-click any block to move the Neovim cursor there.
+
+Emoji shortcodes work too :rocket: :tada:, and so do footnotes.[^offline]
+
 ![Local image](assets/logo.svg)
 
 ## Lists
@@ -68,3 +76,5 @@ flowchart LR
   A[Neovim buffer] -->|TextChanged| B(Lua server)
   B -->|Server-Sent Events| C[Browser preview]
 ```
+
+[^offline]: Every library is bundled, so the preview works offline.

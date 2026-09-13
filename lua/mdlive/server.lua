@@ -7,6 +7,10 @@ local source = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p")
 local root = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(source)))
 local app_dir = vim.fs.joinpath(root, "app")
 
+local max_head = 64 * 1024
+-- Exports send the whole rendered page, with fonts and diagrams inlined.
+local max_body = 64 * 1024 * 1024
+
 local state = {
   server = nil,
   host = nil,
@@ -58,6 +62,12 @@ local function url_decode(s)
   return (s:gsub("%%(%x%x)", function(h)
     return string.char(tonumber(h, 16))
   end))
+end
+
+local function query_param(target, name)
+  local query = "&" .. (target:match("%?([^#]*)") or "")
+  local value = query:match("&" .. name .. "=([^&]*)")
+  return value and url_decode(value)
 end
 
 local function respond(sock, status, headers, body)
@@ -158,30 +168,44 @@ local function allowed_host(value)
   return name == "localhost" or name == "127.0.0.1" or name == "::1" or name == state.host
 end
 
--- POST /open/<bufnr>?path=<relative path>: a markdown link was clicked in the preview.
--- The custom header forces a CORS preflight, which this server never approves,
--- so other websites cannot trigger it; the Origin check is a second guard.
-local function open_link(sock, path, target, headers)
-  local bufnr = tonumber(path:match("^/open/(%d+)$"))
-  if not bufnr then
-    return json(sock, "404 Not Found", { error = "not found" })
-  end
+-- POST requests act in Neovim. The custom header forces a CORS preflight, which
+-- this server never approves, so other websites cannot send them; the Origin
+-- check is a second guard.
+local function post(sock, path, target, headers, body)
   if headers["x-mdlive"] ~= "1" or headers.origin ~= "http://" .. headers.host then
     return json(sock, "403 Forbidden", { error = "forbidden" })
   end
-  if not state.handlers.is_previewed(bufnr) then
-    return json(sock, "404 Not Found", { error = "no preview for this buffer" })
+  local h = state.handlers
+  local action, id = path:match("^/(%l+)/(%d+)$")
+  id = tonumber(id)
+
+  local result, err
+  if action == "export" then
+    -- /export/<id>[?error=]: the rendered page for a pending export.
+    result, err = h.export(id, body, query_param(target, "error"))
+  elseif action == "open" or action == "jump" then
+    if not h.is_previewed(id) then
+      return json(sock, "404 Not Found", { error = "no preview for this buffer" })
+    end
+    if action == "open" then
+      -- /open/<bufnr>?path=: a relative markdown link was clicked.
+      result, err = h.open_link(id, query_param(target, "path") or "")
+    else
+      -- /jump/<bufnr>?line=: a block was double-clicked.
+      result, err = h.jump(id, tonumber(query_param(target, "line")))
+    end
+  else
+    return json(sock, "404 Not Found", { error = "not found" })
   end
-  local query = "&" .. (target:match("%?([^#]*)") or "")
-  local rel = url_decode(query:match("&path=([^&]*)") or "")
-  local url, err = state.handlers.open_link(bufnr, rel)
-  if not url then
+
+  if not result then
     return json(sock, "404 Not Found", { error = err })
   end
-  json(sock, "200 OK", { url = url })
+  json(sock, "200 OK", type(result) == "string" and { url = result } or { ok = true })
 end
 
-local function handle(sock, method, target, headers)
+local function handle(sock, request)
+  local method, target, headers = request.method, request.target, request.headers
   if not allowed_host(headers.host) then
     return text(sock, "403 Forbidden", "Forbidden")
   end
@@ -190,7 +214,7 @@ local function handle(sock, method, target, headers)
   local h = state.handlers
 
   if method == "POST" then
-    return open_link(sock, path, target, headers)
+    return post(sock, path, target, headers, request.body)
   end
   if method ~= "GET" then
     return text(sock, "405 Method Not Allowed", "Method not allowed")
@@ -225,6 +249,15 @@ local function handle(sock, method, target, headers)
   text(sock, "404 Not Found", "Not found")
 end
 
+local function parse_head(head)
+  local method, target = head:match("^(%u+) (%S+) HTTP/1%.[01]\r\n")
+  local headers = {}
+  for name, value in head:gmatch("\r\n([^:\r\n]+):[ \t]*([^\r\n]*)") do
+    headers[name:lower()] = value
+  end
+  return { method = method, target = target, headers = headers }
+end
+
 local function on_connection(err)
   if err then
     return
@@ -232,7 +265,7 @@ local function on_connection(err)
   local sock = uv.new_tcp()
   state.server:accept(sock)
 
-  local buf, handled = "", false
+  local chunks, size, request, handled = {}, 0, nil, false
   sock:read_start(function(read_err, chunk)
     if read_err or not chunk then
       return drop(sock)
@@ -240,31 +273,47 @@ local function on_connection(err)
     if handled then
       return
     end
-    buf = buf .. chunk
-    local head_end = buf:find("\r\n\r\n", 1, true)
-    if not head_end then
-      if #buf > 64 * 1024 then
-        handled = true
-        drop(sock)
+    chunks[#chunks + 1] = chunk
+    size = size + #chunk
+
+    if not request then
+      local data = table.concat(chunks)
+      chunks = { data }
+      local head_end = data:find("\r\n\r\n", 1, true)
+      if not head_end then
+        if size > max_head then
+          handled = true
+          drop(sock)
+        end
+        return
       end
-      return
+      request = parse_head(data:sub(1, head_end))
+      request.body_start = head_end + 4
+      request.length = tonumber((request.headers["content-length"] or "0"):match("^%s*(%d+)%s*$"))
+      if not request.length then
+        request.error = "400 Bad Request"
+      elseif request.length > max_body then
+        request.error = "413 Content Too Large"
+      end
     end
+    if not request.error and size < request.body_start + request.length - 1 then
+      return -- wait for the rest of the body
+    end
+
     handled = true
-    local head = buf:sub(1, head_end)
-    local method, target = head:match("^(%u+) (%S+) HTTP/1%.[01]\r\n")
-    local headers = {}
-    for name, value in head:gmatch("\r\n([^:\r\n]+):[ \t]*([^\r\n]*)") do
-      headers[name:lower()] = value
+    if not request.error then
+      request.body = table.concat(chunks):sub(request.body_start, request.body_start + request.length - 1)
     end
+    chunks = nil
     -- Handlers use the Neovim API, which is not allowed inside luv callbacks.
     vim.schedule(function()
       if sock:is_closing() then
         return
       end
-      if not method then
-        return text(sock, "400 Bad Request", "Bad request")
+      if request.error or not request.method then
+        return text(sock, request.error or "400 Bad Request", "Bad request")
       end
-      local ok, e = pcall(handle, sock, method, target, headers)
+      local ok, e = pcall(handle, sock, request)
       if not ok then
         text(sock, "500 Internal Server Error", tostring(e))
       end
@@ -273,8 +322,10 @@ local function on_connection(err)
 end
 
 --- Starts the server. `opts` holds host, port and the handlers
---- is_previewed(bufnr), buffer_dir(bufnr), on_subscribe(bufnr) and
---- open_link(bufnr, relative_path) -> preview url | nil, error.
+--- is_previewed(bufnr), buffer_dir(bufnr), on_subscribe(bufnr),
+--- open_link(bufnr, relative_path) -> preview url | nil, error,
+--- jump(bufnr, line) -> true | nil, error and
+--- export(id, html, error) -> true | nil, error.
 ---@return integer|nil port, string|nil error
 function M.start(opts)
   if state.server then

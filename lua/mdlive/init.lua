@@ -4,34 +4,66 @@ local theme = require("mdlive.theme")
 
 local M = {}
 
-local previews = {} -- [bufnr] = { group = augroup id, timer = uv timer }
+local previews = {} -- [bufnr] = { group = augroup id, timer = uv timer, tick = changedtick last sent }
 local active = nil -- follow mode: the buffer the preview tabs are showing
+local exports = {} -- [id] = { bufnr, path, base, sent }
+local export_id = 0
+local export_timeout = 20000
 local api = vim.api
 
 local function notify(msg, level)
   vim.notify("[mdlive] " .. msg, level or vim.log.levels.INFO)
 end
 
+local function supported()
+  if vim.fn.has("nvim-0.11") == 1 then
+    return true
+  end
+  notify("requires Neovim 0.11 or newer (see :checkhealth mdlive)", vim.log.levels.ERROR)
+  return false
+end
+
 local function resolve_buf(bufnr)
   return (bufnr == nil or bufnr == 0) and api.nvim_get_current_buf() or bufnr
 end
 
-local function send_content(bufnr)
-  if not previews[bufnr] then
+-- Sends the whole buffer; the browser re-renders it. Unless `force` is set
+-- (a new tab, a renamed file), nothing is sent when the text did not change.
+local function send_content(bufnr, force)
+  local preview = previews[bufnr]
+  if not preview then
     return
   end
+  local tick = api.nvim_buf_get_changedtick(bufnr)
+  if tick == preview.tick and not force then
+    return
+  end
+  preview.tick = tick
   server.broadcast(bufnr, "content", {
     text = table.concat(api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n"),
     name = vim.fn.fnamemodify(api.nvim_buf_get_name(bufnr), ":t"),
   })
 end
 
-local function send_cursor(bufnr)
-  if not (previews[bufnr] and config.options.scroll_sync) or api.nvim_get_current_buf() ~= bufnr then
+-- The window the preview scrolls with: the current one if it shows the buffer.
+local function view_window(bufnr)
+  local win = api.nvim_get_current_win()
+  if api.nvim_win_get_buf(win) == bufnr then
+    return win
+  end
+  return vim.fn.win_findbuf(bufnr)[1]
+end
+
+-- Sends the cursor and the visible lines of `win` (0-based).
+local function send_view(bufnr, win)
+  win = win or view_window(bufnr)
+  if not (previews[bufnr] and config.options.scroll_sync and win) then
     return
   end
   server.broadcast(bufnr, "cursor", {
-    line = api.nvim_win_get_cursor(0)[1] - 1,
+    line = api.nvim_win_get_cursor(win)[1] - 1,
+    top = vim.fn.line("w0", win) - 1,
+    bottom = vim.fn.line("w$", win) - 1,
     total = api.nvim_buf_line_count(bufnr),
   })
 end
@@ -40,6 +72,15 @@ local function send_theme(bufnr)
   local data = config.options.follow_theme and theme.colors() or vim.empty_dict()
   for b in pairs(bufnr and { [bufnr] = true } or previews) do
     server.broadcast(b, "theme", data)
+  end
+end
+
+local function send_exports(bufnr)
+  for id, job in pairs(exports) do
+    if job.bufnr == bufnr and not job.sent then
+      job.sent = true
+      server.broadcast(bufnr, "export", { id = id, base = job.base })
+    end
   end
 end
 
@@ -77,7 +118,7 @@ local function attach(bufnr)
   local timer = vim.uv.new_timer()
   previews[bufnr] = { group = group, timer = timer }
 
-  api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP", "BufFilePost" }, {
+  api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
     group = group,
     buffer = bufnr,
     callback = function()
@@ -91,11 +132,18 @@ local function attach(bufnr)
       )
     end,
   })
+  api.nvim_create_autocmd("BufFilePost", {
+    group = group,
+    buffer = bufnr,
+    callback = function()
+      send_content(bufnr, true)
+    end,
+  })
   api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufEnter" }, {
     group = group,
     buffer = bufnr,
     callback = function()
-      send_cursor(bufnr)
+      send_view(bufnr)
     end,
   })
   api.nvim_create_autocmd("BufUnload", {
@@ -146,6 +194,74 @@ local function open_link(from_buf, rel)
   return "/preview/" .. target
 end
 
+-- A block was double-clicked in the preview: move the cursor to its source line (0-based).
+local function jump(bufnr, line)
+  if not line then
+    return nil, "invalid line"
+  end
+  local win = view_window(bufnr)
+  if not win then
+    return nil, "the buffer is not shown in any window"
+  end
+  line = math.max(1, math.min(math.floor(line) + 1, api.nvim_buf_line_count(bufnr)))
+  local visible = line >= vim.fn.line("w0", win) and line <= vim.fn.line("w$", win)
+  api.nvim_set_current_win(win)
+  api.nvim_win_set_cursor(win, { line, 0 })
+  if not visible then
+    vim.cmd("normal! zz")
+  end
+  return true
+end
+
+-- The browser sends back the rendered page of a pending export.
+local function receive_export(id, html, err)
+  local job = id and exports[id]
+  if not job then
+    return nil, "no export is waiting for this page"
+  end
+  exports[id] = nil
+  if err or html == "" then
+    notify("export failed: " .. (err or "the preview sent an empty page"), vim.log.levels.ERROR)
+    return true
+  end
+  local file, open_err = io.open(job.path, "wb")
+  if not file then
+    notify("could not write " .. job.path .. ": " .. tostring(open_err), vim.log.levels.ERROR)
+    return nil, "could not write the file"
+  end
+  file:write(html)
+  file:close()
+  notify("exported to " .. vim.fn.fnamemodify(job.path, ":~:."))
+  return true
+end
+
+local function url_path(path)
+  return (path:gsub("[^%w%-%._~/]", function(c)
+    return ("%%%02X"):format(c:byte())
+  end))
+end
+
+-- URL prefix that leads from directory `from` to directory `to`, such as "../docs/".
+local function relative_url(from, to)
+  local a = vim.split(vim.fs.normalize(from), "/", { trimempty = true })
+  local b = vim.split(vim.fs.normalize(to), "/", { trimempty = true })
+  if vim.fn.has("win32") == 1 and a[1] ~= b[1] then
+    return vim.uri_from_fname(to) .. "/" -- another drive
+  end
+  local common = 0
+  while common < #a and common < #b and a[common + 1] == b[common + 1] do
+    common = common + 1
+  end
+  local parts = {}
+  for _ = common + 1, #a do
+    parts[#parts + 1] = ".."
+  end
+  for i = common + 1, #b do
+    parts[#parts + 1] = b[i]
+  end
+  return #parts > 0 and url_path(table.concat(parts, "/")) .. "/" or ""
+end
+
 local function start_server()
   if server.is_running() then
     return true
@@ -158,10 +274,13 @@ local function start_server()
     end,
     buffer_dir = buffer_dir,
     open_link = open_link,
+    jump = jump,
+    export = receive_export,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
-      send_content(bufnr)
-      send_cursor(bufnr)
+      send_content(bufnr, true)
+      send_view(bufnr)
+      send_exports(bufnr)
     end,
   })
   if not port then
@@ -212,8 +331,7 @@ local function follow(bufnr)
 end
 
 function M.open(bufnr)
-  if vim.fn.has("nvim-0.11") == 0 then
-    notify("requires Neovim 0.11 or newer (see :checkhealth mdlive)", vim.log.levels.ERROR)
+  if not supported() then
     return
   end
   bufnr = resolve_buf(bufnr)
@@ -278,6 +396,59 @@ function M.is_open(bufnr)
   return previews[resolve_buf(bufnr)] ~= nil
 end
 
+--- Writes the rendered preview of `bufnr` to a standalone HTML file. The page
+--- is rendered by the browser, so the preview is opened first if needed.
+--- `opts.path` defaults to the buffer's file with an .html extension, and
+--- `opts.force` overwrites an existing file.
+function M.export(bufnr, opts)
+  if not supported() then
+    return
+  end
+  bufnr = resolve_buf(bufnr)
+  opts = opts or {}
+
+  local path = opts.path
+  if not path or path == "" then
+    local name = api.nvim_buf_get_name(bufnr)
+    if name == "" then
+      return notify("the buffer has no name, give a file: :MdLiveExport {file}", vim.log.levels.ERROR)
+    end
+    path = vim.fn.fnamemodify(name, ":r") .. ".html"
+  end
+  path = vim.fn.fnamemodify(vim.fs.normalize(path), ":p")
+  local stat = vim.uv.fs_stat(path)
+  if stat and stat.type == "directory" then
+    return notify(path .. " is a directory", vim.log.levels.ERROR)
+  end
+  if stat and not opts.force then
+    return notify(vim.fn.fnamemodify(path, ":~:.") .. " exists (add ! to overwrite)", vim.log.levels.ERROR)
+  end
+  if vim.fn.isdirectory(vim.fs.dirname(path)) == 0 then
+    return notify("directory " .. vim.fs.dirname(path) .. " does not exist", vim.log.levels.ERROR)
+  end
+
+  export_id = export_id + 1
+  local id = export_id
+  -- Relative images and links in the page must still work from where the file is written.
+  exports[id] = { bufnr = bufnr, path = path, base = relative_url(vim.fs.dirname(path), buffer_dir(bufnr)) }
+  vim.defer_fn(function()
+    if exports[id] then
+      exports[id] = nil
+      notify("export timed out: no preview tab answered", vim.log.levels.ERROR)
+    end
+  end, export_timeout)
+
+  if previews[bufnr] and server.client_count(bufnr) > 0 then
+    send_exports(bufnr)
+  else
+    -- The export is sent once the tab connects.
+    M.open(bufnr)
+    if not server.is_running() then
+      exports[id] = nil
+    end
+  end
+end
+
 function M.setup(opts)
   config.setup(opts)
   local group = api.nvim_create_augroup("MdLiveAutoOpen", { clear = true })
@@ -306,6 +477,19 @@ api.nvim_create_autocmd("OptionSet", {
   pattern = "background",
   callback = function()
     send_theme()
+  end,
+})
+
+-- Scrolling without moving the cursor (<C-e>, the mouse wheel) scrolls the preview too.
+api.nvim_create_autocmd("WinScrolled", {
+  group = global_group,
+  callback = function()
+    for key in pairs(vim.v.event) do
+      local win = tonumber(key)
+      if win and api.nvim_win_is_valid(win) then
+        send_view(api.nvim_win_get_buf(win), win)
+      end
+    end
   end,
 })
 

@@ -8,10 +8,15 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Pure Lua: the HTTP server runs inside Neovim (`vim.uv`), nothing to install
 - Updates while typing (debounced), pushed with Server-Sent Events
 - One tab follows you: switching to another markdown buffer switches the preview
-- Scroll sync with the cursor
-- Code highlighting (highlight.js) using your colorscheme's syntax colors
+- Scroll sync with the window and cursor, and double-click the preview to
+  jump to the source line in Neovim
+- Code highlighting (highlight.js) using your colorscheme's syntax colors,
+  with a copy button on code blocks
 - Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
-- Tables, task lists, heading anchors and relative images
+- Tables, task lists, heading anchors, footnotes, `:emoji:` shortcodes and
+  relative images
+- GitHub alerts (`> [!NOTE]`, `[!TIP]`, `[!WARNING]`, ...) in your diagnostic colors
+- Export the preview to a standalone HTML file with `:MdLiveExport`
 - Relative links: markdown files open in Neovim and the preview follows them;
   other files open in a new tab
 - YAML (`---`) and TOML (`+++`) front matter shown as a collapsible block
@@ -28,7 +33,7 @@ Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
 {
   "rafael0rueda/mdlive",
   ft = "markdown",
-  cmd = { "MdLive", "MdLiveToggle" },
+  cmd = { "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveExport" },
   opts = {},
 }
 ```
@@ -52,11 +57,14 @@ require("mdlive").setup()
 
 ## Usage
 
-| Command         | Action                                                              |
-| --------------- | ------------------------------------------------------------------- |
-| `:MdLive`       | Start the preview and open it in the browser (reuses an open tab)   |
-| `:MdLiveStop`   | Stop the preview (in follow mode, from any buffer)                  |
-| `:MdLiveToggle` | Toggle the preview                                                  |
+| Command                   | Action                                                            |
+| ------------------------- | ----------------------------------------------------------------- |
+| `:MdLive`                 | Start the preview and open it in the browser (reuses an open tab) |
+| `:MdLiveStop`             | Stop the preview (in follow mode, from any buffer)                |
+| `:MdLiveToggle`           | Toggle the preview                                                |
+| `:MdLiveExport[!] [file]` | Save the preview as HTML, next to the file by default (`!` overwrites) |
+
+To get a PDF, print the preview from the browser.
 
 Example mapping:
 
@@ -92,10 +100,13 @@ Neovim buffer --TextChanged/CursorMoved--> Lua HTTP server --SSE--> browser
 
 The browser page (`app/`) renders the Markdown with markdown-it and patches the
 DOM in place, so images and diagrams that did not change are not reloaded.
+Highlighted code, formulas and diagrams are cached, and events that arrive
+during a render are merged, so a 10,000-line document updates in about 0.1 s.
 Every block carries its source line, which is how the cursor position maps to
 a scroll position. Theme colors are read from highlight groups (`Normal`,
 `@keyword`, `@string`, `@markup.heading.1`, ...) and sent again on
-`ColorScheme`.
+`ColorScheme`. `:MdLiveExport` asks the open tab for the rendered page, with
+styles and fonts inlined, and Neovim writes it to disk.
 
 ## Security
 
@@ -108,8 +119,9 @@ for example a README in a repository you just cloned:
   and the current working directory, with a `sandbox` policy so an `.html` or
   `.svg` file cannot run scripts either.
 - The server listens on `127.0.0.1` and rejects requests with a non-local
-  `Host` header. Opening a linked file in Neovim needs a same-origin request
-  with a custom header, so other websites cannot trigger it.
+  `Host` header. Requests that act in Neovim (opening a linked file, moving
+  the cursor, saving an export) need a same-origin request with a custom
+  header, so other websites cannot trigger them.
 
 ## Tests
 
@@ -134,6 +146,8 @@ The browser libraries in `app/vendor` keep their own licenses, included in
 | ------------------- | ------- | --------------------- |
 | markdown-it         | 15.0.2  | MIT                   |
 | markdown-it-texmath | 1.0.0   | MIT                   |
+| markdown-it-footnote | 4.0.0  | MIT                   |
+| markdown-it-emoji   | 3.1.0   | MIT                   |
 | KaTeX               | 0.18.7  | MIT                   |
 | Mermaid             | 12.0.0  | MIT                   |
 | highlight.js        | 11.12.0 | BSD-3-Clause          |

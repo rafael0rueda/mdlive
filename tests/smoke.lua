@@ -102,6 +102,21 @@ local ok, err = xpcall(function()
   check("stream sends initial content", events:find("# mdlive demo", 1, true))
   check("stream sends edited content", events:find("# Edited live", 1, true))
   check("stream sends cursor", events:find('"line":2', 1, true), events:match("event: cursor\ndata: [^\n]*"))
+  local view = events:match("event: cursor\ndata: ([^\n]*)")
+  view = view and vim.json.decode(view)
+  check(
+    "cursor event has the visible lines",
+    view and type(view.top) == "number" and view.bottom >= view.top and view.total > 0,
+    vim.inspect(view)
+  )
+
+  -- TextChanged without a change to the text sends nothing new.
+  local idle_stream = curl("/events/" .. buf, { "-N" }, 1)
+  vim.wait(300)
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  local _, idle_events = idle_stream()
+  local _, content_events = idle_events:gsub("event: content", "")
+  check("unchanged buffer is not sent again", content_events == 1, content_events)
 
   local theme = events:match("event: theme\ndata: ([^\n]*)")
   local decoded = theme and vim.json.decode(theme)
@@ -135,6 +150,56 @@ local ok, err = xpcall(function()
   )
   code, body = get("/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
   check("link back reuses the demo buffer", code == 200 and vim.api.nvim_get_current_buf() == buf, body)
+
+  -- Double-clicking a block in the preview moves the cursor to its source line.
+  code, body = get("/jump/" .. buf .. "?line=15", same_origin)
+  check("jump moves the cursor", code == 200 and vim.api.nvim_win_get_cursor(0)[1] == 16, body)
+  check(
+    "jump needs custom header",
+    get("/jump/" .. buf .. "?line=1", { "-X", "POST", "-H", "Origin: " .. base }) == 403
+  )
+
+  -- :MdLiveExport: the connected tab renders the page and Neovim writes it.
+  local messages = {}
+  local notify = vim.notify
+  vim.notify = function(msg)
+    table.insert(messages, msg)
+  end
+  local out_dir = vim.fn.tempname()
+  vim.fn.mkdir(out_dir, "p")
+  local export_path = out_dir .. "/demo.html"
+  local export_stream = curl("/events/" .. buf, { "-N" }, 1)
+  vim.wait(300)
+  vim.cmd("MdLiveExport " .. export_path)
+  local _, export_events = export_stream()
+  local job = export_events:match("event: export\ndata: ([^\n]*)")
+  job = job and vim.json.decode(job)
+  check(
+    "export asks the tab for the page",
+    job and job.id and job.base:match("^%.%./.*examples/$"),
+    export_events:match("event: export\ndata: [^\n]*")
+  )
+
+  -- Several read chunks, to check the request body is put together.
+  local page = "<!doctype html>\n" .. ("<p>exported</p>\n"):rep(20000)
+  local page_file = out_dir .. "/page.html"
+  local f = assert(io.open(page_file, "wb"))
+  f:write(page)
+  f:close()
+  local send_page = vim.list_extend({ "--data-binary", "@" .. page_file }, same_origin)
+  code, body = get("/export/" .. (job and job.id or 0), send_page)
+  f = io.open(export_path, "rb")
+  local written = f and f:read("*a")
+  if f then
+    f:close()
+  end
+  check("export writes the page", code == 200 and written == page, body)
+  check("export answers each request once", get("/export/" .. (job and job.id or 0), send_page) == 404)
+
+  messages = {}
+  vim.cmd("MdLiveExport " .. export_path)
+  check("export refuses to overwrite", (messages[1] or ""):find("exists", 1, true), messages[1])
+  vim.notify = notify
 
   require("mdlive").close(guide)
   vim.wait(200)

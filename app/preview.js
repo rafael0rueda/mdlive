@@ -8,9 +8,12 @@
 
   let mode = systemMode();
   let cursor = null;
+  let documentName = "";
   // Arrived through a link like guide.md#install: scroll there instead of to the cursor.
   let pendingAnchor = location.hash.length > 1 ? safeDecode(location.hash.slice(1)) : null;
   let ignoreCursor = pendingAnchor !== null;
+  // After a double-click jump, Neovim's cursor event should not scroll the page away.
+  let jumpedAt = 0;
   const themeKeys = new Set();
 
   root.dataset.theme = mode;
@@ -24,28 +27,74 @@
     statusEl.textContent = message || "";
   }
 
+  function flashStatus(message) {
+    setStatus(message);
+    setTimeout(() => setStatus(null), 4000);
+  }
+
+  // A small cache: every edit renders the whole document again, but most code
+  // blocks and formulas in it are the same as last time.
+  function memo(limit) {
+    const cache = new Map();
+    return (key, compute) => {
+      let value = cache.get(key);
+      if (value === undefined) {
+        value = compute();
+        cache.set(key, value);
+        if (cache.size > limit) cache.delete(cache.keys().next().value);
+      }
+      return value;
+    };
+  }
+
+  const highlightCache = memo(500);
+  const mathCache = memo(2000);
+
   // ---------------------------------------------------------------- markdown
 
   const md = window.markdownit({
     html: true,
     linkify: true,
     highlight(code, lang) {
-      if (lang && hljs.getLanguage(lang)) {
+      if (!lang || !hljs.getLanguage(lang)) return ""; // markdown-it escapes the code itself
+      return highlightCache(`${lang}\n${code}`, () => {
         try {
           return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
-        } catch (_) {}
-      }
-      return ""; // markdown-it escapes the code itself
+        } catch (_) {
+          return "";
+        }
+      });
     },
   });
 
-  md.use(texmath, { engine: katex, delimiters: "dollars" });
+  // Formulas become placeholders that are rendered after sanitizing, like diagrams.
+  // KaTeX output is safe without the `trust` option, and it is large: checking it
+  // took most of the sanitizing time on long documents.
+  let mathSources = [];
+  md.use(texmath, {
+    engine: {
+      renderToString(tex, options) {
+        mathSources.push({ tex, display: Boolean(options.displayMode) });
+        return `<span class="math" data-math="${mathSources.length - 1}"></span>`;
+      },
+    },
+    delimiters: "dollars",
+  });
+  md.use(markdownitFootnote);
+  md.use(markdownitEmoji);
 
-  // Tag every block with its source line so the preview can follow the cursor.
+  // Tag every block with its source lines: data-line is where it starts (scroll
+  // sync), data-source the lines its text comes from (double-click to jump).
   md.core.ruler.push("source_lines", (state) => {
     for (const token of state.tokens) {
-      if (token.block && token.map && token.nesting >= 0) {
-        token.attrSet("data-line", String(token.map[0]));
+      if (!(token.block && token.map && token.nesting >= 0)) continue;
+      token.attrSet("data-line", String(token.map[0]));
+      if (token.type === "fence") {
+        // The code sits between the fences.
+        const first = token.map[0] + 1;
+        token.attrSet("data-source", `${first}-${first + token.content.split("\n").length - 1}`);
+      } else {
+        token.attrSet("data-source", `${token.map[0]}-${token.map[1]}`);
       }
     }
   });
@@ -108,6 +157,14 @@
       block.removeAttribute("data-mermaid");
     }
 
+    for (const el of fragment.querySelectorAll(".math[data-math]")) {
+      const source = mathSources[Number(el.dataset.math)];
+      el.removeAttribute("data-math");
+      if (!source) continue;
+      el.dataset.tex = source.tex;
+      if (source.display) el.dataset.display = "";
+    }
+
     // Relative images are served from the markdown file's directory.
     for (const img of fragment.querySelectorAll("img[src]")) {
       const src = img.getAttribute("src");
@@ -163,11 +220,53 @@
       host.insertBefore(box, first);
       li.classList.add("task-list-item");
     }
+
+    // GitHub alerts: a blockquote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION].
+    for (const quote of fragment.querySelectorAll("blockquote")) {
+      const paragraph = quote.firstElementChild;
+      const text = paragraph && paragraph.tagName === "P" ? paragraph.firstChild : null;
+      const match =
+        text &&
+        text.nodeType === Node.TEXT_NODE &&
+        /^\[!(note|tip|important|warning|caution)\][ \t]*(?:\n|$)/i.exec(text.nodeValue);
+      if (!match) continue;
+      text.nodeValue = text.nodeValue.slice(match[0].length);
+      if (!text.nodeValue) text.remove();
+      if (!paragraph.hasChildNodes()) paragraph.remove();
+      const type = match[1].toLowerCase();
+      quote.classList.add("markdown-alert", `markdown-alert-${type}`);
+      const title = document.createElement("p");
+      title.className = "markdown-alert-title";
+      title.textContent = type[0].toUpperCase() + type.slice(1);
+      quote.prepend(title);
+    }
+
+    // Copy buttons on code blocks.
+    for (const pre of fragment.querySelectorAll("pre")) {
+      if (!pre.querySelector(":scope > code") || pre.closest(".front-matter")) continue;
+      const wrapper = document.createElement("div");
+      wrapper.className = "code-block";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-code";
+      button.textContent = "Copy";
+      pre.replaceWith(wrapper);
+      wrapper.append(pre, button);
+    }
   }
 
   // ------------------------------------------------------------------ render
 
-  const isMermaid = (node) => node.nodeType === Node.ELEMENT_NODE && node.classList.contains("mermaid-block");
+  // Diagrams and formulas are filled in after patching. Their placeholders are
+  // compared by source, so unchanged ones keep what was rendered into them.
+  function renderedKey(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE) return null;
+    if (node.classList.contains("mermaid-block")) return `mermaid\n${node.dataset.src}`;
+    if (node.classList.contains("math") && node.hasAttribute("data-tex")) {
+      return `math\n${node.hasAttribute("data-display")}\n${node.dataset.tex}`;
+    }
+    return null;
+  }
 
   function syncAttributes(target, source) {
     for (const { name } of Array.from(target.attributes)) {
@@ -180,39 +279,129 @@
     }
   }
 
-  // Updates `target` in place so unchanged nodes (images, diagrams) are not rebuilt.
+  // Updates `prev` in place to match `next` so unchanged nodes (images, diagrams)
+  // are not rebuilt. Returns the node that ends up in the document.
+  function patchNode(parent, prev, next) {
+    const prevKey = renderedKey(prev);
+    const nextKey = renderedKey(next);
+    if (prevKey !== null || nextKey !== null) {
+      if (prevKey === nextKey) {
+        syncAttributes(prev, next);
+        return prev;
+      }
+    } else if (prev.isEqualNode(next)) {
+      return prev;
+    } else if (prev.nodeType === Node.TEXT_NODE && next.nodeType === Node.TEXT_NODE) {
+      prev.nodeValue = next.nodeValue;
+      return prev;
+    } else if (
+      prev.nodeType === Node.ELEMENT_NODE &&
+      next.nodeType === Node.ELEMENT_NODE &&
+      prev.tagName === next.tagName
+    ) {
+      syncAttributes(prev, next);
+      patch(prev, next);
+      return prev;
+    }
+    parent.replaceChild(next, prev);
+    return next;
+  }
+
   function patch(target, source) {
     const oldNodes = Array.from(target.childNodes);
     const newNodes = Array.from(source.childNodes);
-
     newNodes.forEach((next, i) => {
-      const prev = oldNodes[i];
-      if (!prev) {
-        target.appendChild(next);
-      } else if (isMermaid(prev) || isMermaid(next)) {
-        if (isMermaid(prev) && isMermaid(next) && prev.dataset.src === next.dataset.src) {
-          prev.dataset.line = next.dataset.line;
-        } else {
-          target.replaceChild(next, prev);
-        }
-      } else if (prev.isEqualNode(next)) {
-        // unchanged
-      } else if (prev.nodeType === Node.TEXT_NODE && next.nodeType === Node.TEXT_NODE) {
-        prev.nodeValue = next.nodeValue;
-      } else if (
-        prev.nodeType === Node.ELEMENT_NODE &&
-        next.nodeType === Node.ELEMENT_NODE &&
-        prev.tagName === next.tagName
-      ) {
-        syncAttributes(prev, next);
-        patch(prev, next);
-      } else {
-        target.replaceChild(next, prev);
-      }
+      if (oldNodes[i]) patchNode(target, oldNodes[i], next);
+      else target.appendChild(next);
     });
-
     for (let i = newNodes.length; i < oldNodes.length; i++) {
       oldNodes[i].remove();
+    }
+  }
+
+  // A block whose HTML differs from `next` only in line numbers: copy those
+  // attributes, pairing the elements that carry them, instead of a full patch.
+  function updateLines(parent, prev, next) {
+    if (prev.nodeType !== Node.ELEMENT_NODE) return patchNode(parent, prev, next);
+    const selector = "[data-line], [data-source]";
+    const sources = [next, ...next.querySelectorAll(selector)];
+    const targets = [prev, ...prev.querySelectorAll(selector)];
+    if (sources.length !== targets.length) return patchNode(parent, prev, next);
+    sources.forEach((source, i) => {
+      for (const name of ["data-line", "data-source"]) {
+        const value = source.getAttribute(name);
+        if (value === null) targets[i].removeAttribute(name);
+        else if (targets[i].getAttribute(name) !== value) targets[i].setAttribute(name, value);
+      }
+    });
+    return prev;
+  }
+
+  // The HTML each top-level block was rendered from, and the same without line numbers.
+  const blockSources = new WeakMap();
+
+  function blockSource(node) {
+    const html = node.nodeType === Node.ELEMENT_NODE ? node.outerHTML : `#${node.nodeType}${node.nodeValue}`;
+    return { html, key: html.replace(/ data-(?:line|source)="[^"]*"/g, "") };
+  }
+
+  // Top-level blocks are matched from both ends by their HTML without line
+  // numbers, so adding or removing a block only touches the blocks that changed:
+  // the ones below just get new line numbers instead of being rebuilt.
+  function patchBlocks(target, source) {
+    const oldNodes = Array.from(target.childNodes);
+    const newNodes = Array.from(source.childNodes);
+    const oldSources = oldNodes.map((node) => blockSources.get(node));
+    const newSources = newNodes.map(blockSource);
+    const same = (i, j) => oldSources[i] !== undefined && oldSources[i].key === newSources[j].key;
+
+    let start = 0;
+    while (start < oldNodes.length && start < newNodes.length && same(start, start)) start++;
+    let oldEnd = oldNodes.length;
+    let newEnd = newNodes.length;
+    while (oldEnd > start && newEnd > start && same(oldEnd - 1, newEnd - 1)) {
+      oldEnd--;
+      newEnd--;
+    }
+
+    // Blocks rendered from the same HTML are left alone, keeping what was filled
+    // into them; blocks that only moved get their new line numbers.
+    const update = (prev, j) => {
+      const old = blockSources.get(prev);
+      let node = prev;
+      if (!old || old.key !== newSources[j].key) node = patchNode(target, prev, newNodes[j]);
+      else if (old.html !== newSources[j].html) node = updateLines(target, prev, newNodes[j]);
+      blockSources.set(node, newSources[j]);
+    };
+    for (let i = 0; i < start; i++) update(oldNodes[i], i);
+    for (let i = oldEnd, j = newEnd; i < oldNodes.length; i++, j++) update(oldNodes[i], j);
+
+    // The changed blocks in between: update in place, then add or remove the rest.
+    const anchor = oldNodes[oldEnd] ?? null;
+    const changed = Math.min(oldEnd, newEnd) - start;
+    for (let k = 0; k < changed; k++) update(oldNodes[start + k], start + k);
+    for (let j = start + changed; j < newEnd; j++) {
+      target.insertBefore(newNodes[j], anchor);
+      blockSources.set(newNodes[j], newSources[j]);
+    }
+    for (let i = start + changed; i < oldEnd; i++) oldNodes[i].remove();
+  }
+
+  const renderedMath = new WeakSet();
+
+  function renderMath() {
+    for (const el of contentEl.querySelectorAll(".math[data-tex]")) {
+      if (renderedMath.has(el)) continue;
+      const { tex } = el.dataset;
+      const displayMode = el.hasAttribute("data-display");
+      el.innerHTML = mathCache(`${displayMode}\n${tex}`, () => {
+        try {
+          return katex.renderToString(tex, { displayMode, throwOnError: false });
+        } catch (err) {
+          return `<span class="math-error">${md.utils.escapeHtml(`${tex}: ${err.message}`)}</span>`;
+        }
+      });
+      renderedMath.add(el);
     }
   }
 
@@ -220,17 +409,47 @@
     const template = document.createElement("template");
     // HTML inside the markdown is untrusted: drop scripts, event handlers, iframes, ...
     const env = { mermaid: [] };
+    mathSources = [];
     const { frontMatter, body } = splitFrontMatter(text);
     const html = (frontMatter ? frontMatterHtml(frontMatter) : "") + md.render(body, env);
     template.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ["semantics", "annotation"] });
     postProcess(template.content, env);
-    patch(contentEl, template.content);
+    patchBlocks(contentEl, template.content);
+    renderMath();
+    lineIndex = null;
     queueMermaid();
     if (pendingAnchor !== null) {
       document.getElementById(pendingAnchor)?.scrollIntoView();
       pendingAnchor = null;
     } else if (cursor) {
       scrollToLine(cursor);
+    }
+  }
+
+  // Content and cursor events that arrive while a long render runs are merged
+  // into one update. (Not requestAnimationFrame: it stops in covered windows,
+  // and the preview is usually next to or behind the editor.)
+  let pendingText = null;
+  let pendingScroll = false;
+  let updateQueued = false;
+
+  function scheduleUpdate() {
+    if (updateQueued) return;
+    updateQueued = true;
+    setTimeout(flushUpdates, 0);
+  }
+
+  function flushUpdates() {
+    updateQueued = false;
+    if (pendingText !== null) {
+      const text = pendingText;
+      pendingText = null;
+      pendingScroll = false; // render() scrolls to the cursor itself
+      render(text);
+    }
+    if (pendingScroll) {
+      pendingScroll = false;
+      if (cursor) scrollToLine(cursor);
     }
   }
 
@@ -306,31 +525,56 @@
 
   // ------------------------------------------------------------------ scroll
 
-  function scrollToLine({ line, total }) {
-    let prev = null;
-    let prevLine = -1;
-    let next = null;
-    let nextLine = Infinity;
-    for (const el of contentEl.querySelectorAll("[data-line]")) {
-      const l = Number(el.dataset.line);
-      if (l <= line && l >= prevLine) {
-        prev = el;
-        prevLine = l;
-      } else if (l > line && l < nextLine) {
-        next = el;
-        nextLine = l;
-      }
-    }
+  // Blocks sorted by their first source line (document order for equal lines),
+  // rebuilt after each render. Footnotes are left out: they are rendered at the
+  // end, away from where they are written.
+  let lineIndex = null;
 
-    let y = 0;
-    if (prev) {
-      const top = (el) => el.getBoundingClientRect().top + window.scrollY;
-      const start = top(prev);
-      const end = next ? top(next) : start + prev.getBoundingClientRect().height;
-      const endLine = next ? nextLine : Math.max(total, prevLine + 1);
-      y = start + ((end - start) * (line - prevLine)) / Math.max(1, endLine - prevLine);
+  function lineBlocks() {
+    if (!lineIndex) {
+      const footnotes = new Set(contentEl.querySelectorAll(".footnotes [data-line]"));
+      lineIndex = [];
+      for (const el of contentEl.querySelectorAll("[data-line]")) {
+        if (!footnotes.has(el)) lineIndex.push({ line: Number(el.dataset.line), el });
+      }
+      lineIndex.sort((a, b) => a.line - b.line);
     }
-    window.scrollTo({ top: Math.max(0, y - window.innerHeight / 3), behavior: "instant" });
+    return lineIndex;
+  }
+
+  // Page offset of a source line, interpolated between the blocks around it.
+  function lineOffset(line, total) {
+    const blocks = lineBlocks();
+    // Binary search for the first block that starts after `line`.
+    let lo = 0;
+    let hi = blocks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (blocks[mid].line <= line) lo = mid + 1;
+      else hi = mid;
+    }
+    const prev = blocks[lo - 1];
+    const next = blocks[lo];
+    if (!prev) return 0;
+
+    const top = (el) => el.getBoundingClientRect().top + window.scrollY;
+    const start = top(prev.el);
+    const end = next ? top(next.el) : start + prev.el.getBoundingClientRect().height;
+    const endLine = next ? next.line : Math.max(total, prev.line + 1);
+    return start + ((end - start) * (line - prev.line)) / Math.max(1, endLine - prev.line);
+  }
+
+  // Shows the same part of the document as the Neovim window, keeping the cursor on screen.
+  function scrollToLine({ line, top = line, bottom = line, total }) {
+    const height = window.innerHeight;
+    let y = top === 0 ? 0 : lineOffset(top, total);
+    // Rendered blocks can be much taller than their source, so the cursor may fall off the page.
+    const cursorY = lineOffset(line, total);
+    if (cursorY < y || cursorY > y + height * 0.8) {
+      const fraction = Math.min(1, Math.max(0, (line - top) / Math.max(1, bottom - top)));
+      y = cursorY - height * 0.8 * fraction;
+    }
+    window.scrollTo({ top: Math.max(0, y), behavior: "instant" });
   }
 
   // ------------------------------------------------------------------- theme
@@ -350,10 +594,135 @@
     queueMermaid();
   }
 
+  // ------------------------------------------------------------------ export
+
+  // Attributes this script adds for the live preview; the exported page does not need them.
+  const liveAttributes = [
+    "data-line",
+    "data-source",
+    "data-src",
+    "data-tex",
+    "data-display",
+    "data-open-path",
+    "data-open-hash",
+  ];
+
+  async function fetchOk(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return response;
+  }
+
+  async function dataUrl(url) {
+    const blob = await (await fetchOk(url)).blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // KaTeX styles with the woff2 fonts inlined, so math renders without the plugin.
+  async function katexCss() {
+    const css = await (await fetchOk("/app/vendor/katex/katex.min.css")).text();
+    const files = new Set(Array.from(css.matchAll(/url\((fonts\/[^)]+\.woff2)\)/g), (m) => m[1]));
+    const urls = new Map(
+      await Promise.all(Array.from(files, async (file) => [file, await dataUrl(`/app/vendor/katex/${file}`)])),
+    );
+    return css.replace(/src:url\((fonts\/[^)]+\.woff2)\)[^;}]*/g, (_, file) => `src:url(${urls.get(file)}) format("woff2")`);
+  }
+
+  // A standalone page: styles and fonts inlined, relative files resolved through `base`.
+  async function standaloneHtml(base) {
+    const page = contentEl.cloneNode(true);
+    const prefix = `/files/${bufnr}/`;
+    for (const el of page.querySelectorAll("[src], [href]")) {
+      for (const name of ["src", "href"]) {
+        const value = el.getAttribute(name);
+        if (value && value.startsWith(prefix)) el.setAttribute(name, base + value.slice(prefix.length));
+      }
+    }
+    page.querySelectorAll(".copy-code").forEach((button) => button.remove());
+    for (const el of page.querySelectorAll(liveAttributes.map((name) => `[${name}]`).join(","))) {
+      liveAttributes.forEach((name) => el.removeAttribute(name));
+    }
+
+    const styles = [];
+    if (page.querySelector(".katex")) styles.push(await katexCss());
+    styles.push(await (await fetchOk("/app/style.css")).text());
+    styles.push(".markdown-body { padding-bottom: 32px; }");
+
+    const escape = md.utils.escapeHtml;
+    const heading = page.querySelector("h1");
+    const title = (heading && heading.textContent.trim()) || documentName || "mdlive";
+    return [
+      "<!doctype html>",
+      `<html lang="en" data-theme="${mode}" style="${escape(root.style.cssText)}">`,
+      "<head>",
+      '<meta charset="utf-8" />',
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+      '<meta name="generator" content="mdlive" />',
+      `<title>${escape(title)}</title>`,
+      `<style>\n${styles.join("\n")}\n</style>`,
+      "</head>",
+      "<body>",
+      `<main class="markdown-body">\n${page.innerHTML}\n</main>`,
+      "</body>",
+      "</html>",
+      "",
+    ].join("\n");
+  }
+
+  // :MdLiveExport asked for the rendered page; Neovim writes it to disk.
+  async function exportPage({ id, base }) {
+    let body = "";
+    let query = "";
+    try {
+      flushUpdates(); // render content that is still queued
+      await mermaidQueue; // diagrams from the latest content
+      body = await standaloneHtml(base);
+    } catch (err) {
+      query = `?error=${encodeURIComponent(String((err && err.message) || err))}`;
+    }
+    try {
+      await fetch(`/export/${id}${query}`, {
+        method: "POST",
+        headers: { "X-MdLive": "1", "Content-Type": "text/html; charset=utf-8" },
+        body,
+      });
+    } catch (_) {
+      // Neovim reports the export as timed out.
+    }
+  }
+
   // ------------------------------------------------------------------ events
 
-  // Relative markdown links open the file in Neovim, then this tab follows it.
+  function post(path) {
+    return fetch(path, { method: "POST", headers: { "X-MdLive": "1" } }).then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      return data;
+    });
+  }
+
+  let navigating = false;
+
   contentEl.addEventListener("click", async (event) => {
+    const copy = event.target.closest(".copy-code");
+    if (copy) {
+      const code = copy.parentElement.querySelector("pre").textContent;
+      try {
+        await navigator.clipboard.writeText(code);
+        copy.textContent = "Copied";
+      } catch (_) {
+        copy.textContent = "Copy failed";
+      }
+      setTimeout(() => (copy.textContent = "Copy"), 1500);
+      return;
+    }
+
+    // Relative markdown links open the file in Neovim, then this tab follows it.
     const link = event.target.closest("a[data-open-path]");
     if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -361,21 +730,33 @@
     // Neovim changes buffer while handling this; don't also follow its "switch" event.
     navigating = true;
     try {
-      const response = await fetch(`/open/${bufnr}?path=${encodeURIComponent(openPath)}`, {
-        method: "POST",
-        headers: { "X-MdLive": "1" },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      const data = await post(`/open/${bufnr}?path=${encodeURIComponent(openPath)}`);
       location.href = data.url + openHash;
     } catch (err) {
       navigating = false;
-      setStatus(`Could not open ${openPath}: ${err.message}`);
-      setTimeout(() => setStatus(null), 4000);
+      flashStatus(`Could not open ${openPath}: ${err.message}`);
     }
   });
 
-  let navigating = false;
+  // Double-clicking a block moves the Neovim cursor to its source line.
+  contentEl.addEventListener("dblclick", async (event) => {
+    if (event.target.closest("a, button, input, summary")) return;
+    const block = event.target.closest("[data-source], [data-line]");
+    if (!block) return;
+    const [first, last] = (block.dataset.source || `${block.dataset.line}-${Number(block.dataset.line) + 1}`)
+      .split("-")
+      .map(Number);
+    // Estimate the line inside multi-line blocks from where the click landed.
+    const rect = block.getBoundingClientRect();
+    const fraction = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
+    const line = first + Math.max(0, Math.min(last - first - 1, Math.floor(fraction * (last - first))));
+    jumpedAt = performance.now();
+    try {
+      await post(`/jump/${bufnr}?line=${line}`);
+    } catch (err) {
+      flashStatus(`Could not jump to line ${line + 1}: ${err.message}`);
+    }
+  });
 
   function connect() {
     const events = new EventSource(`/events/${bufnr}`);
@@ -383,8 +764,10 @@
     events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
     events.addEventListener("content", (e) => {
       const data = JSON.parse(e.data);
-      document.title = `${data.name || "[No Name]"} · mdlive`;
-      render(data.text);
+      documentName = data.name || "";
+      document.title = `${documentName || "[No Name]"} · mdlive`;
+      pendingText = data.text;
+      scheduleUpdate();
     });
     events.addEventListener("cursor", (e) => {
       if (ignoreCursor) {
@@ -392,8 +775,12 @@
         return;
       }
       cursor = JSON.parse(e.data);
-      scrollToLine(cursor);
+      if (performance.now() - jumpedAt > 800) {
+        pendingScroll = true;
+        scheduleUpdate();
+      }
     });
+    events.addEventListener("export", (e) => exportPage(JSON.parse(e.data)));
     // Follow mode: Neovim moved to another markdown buffer, so show that one.
     events.addEventListener("switch", (e) => {
       if (navigating) return;
@@ -401,6 +788,8 @@
       bufnr = String(JSON.parse(e.data).bufnr);
       history.replaceState(null, "", `/preview/${bufnr}`);
       cursor = null;
+      pendingText = null;
+      pendingScroll = false;
       pendingAnchor = null;
       ignoreCursor = false;
       window.scrollTo(0, 0);

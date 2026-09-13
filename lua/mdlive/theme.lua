@@ -27,6 +27,12 @@ local spec = {
   { "syn-meta", { "@keyword.directive", "PreProc" }, "fg" },
   { "syn-added", { "Added", "DiffAdd" }, "fg" },
   { "syn-deleted", { "Removed", "DiffDelete" }, "fg" },
+  -- GitHub alerts: > [!NOTE], [!TIP], ...
+  { "alert-note", { "DiagnosticInfo" }, "fg" },
+  { "alert-tip", { "DiagnosticOk" }, "fg" },
+  { "alert-important", { "DiagnosticHint" }, "fg" },
+  { "alert-warning", { "DiagnosticWarn" }, "fg" },
+  { "alert-caution", { "DiagnosticError" }, "fg" },
 }
 
 for level = 1, 6 do

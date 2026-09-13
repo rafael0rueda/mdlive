@@ -40,7 +40,7 @@ With lazy.nvim: >lua
     {
       "rafael0rueda/mdlive",
       ft = "markdown",
-      cmd = { "MdLive", "MdLiveStop", "MdLiveToggle" },
+      cmd = { "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveExport" },
       opts = {},
     }
 <
@@ -62,6 +62,13 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
 
 :MdLiveToggle                                                  *:MdLiveToggle*
     Start or stop the preview of the current buffer.
+
+:MdLiveExport[!] [file]                                        *:MdLiveExport*
+    Write the preview of the current buffer to a standalone HTML file, with
+    styles, fonts and diagrams included. [file] defaults to the buffer's
+    file with an `.html` extension. Add [!] to overwrite an existing file.
+    The page is rendered by the browser, so a preview tab is opened first
+    if none is connected. See |mdlive-export|.
 
 Example mapping: >lua
     vim.keymap.set("n", "<leader>mv", "<cmd>MdLiveToggle<cr>",
@@ -140,6 +147,11 @@ mdlive.close({bufnr})                                         *mdlive.close()*
 mdlive.toggle({bufnr})                                       *mdlive.toggle()*
     Same as |:MdLiveToggle| for {bufnr}.
 
+mdlive.export({bufnr}, {opts})                               *mdlive.export()*
+    Same as |:MdLiveExport| for {bufnr}. {opts} is a table with:
+    - `path`: file to write, defaults to the buffer's file with `.html`
+    - `force`: `true` to overwrite an existing file
+
 mdlive.is_open({bufnr})                                     *mdlive.is_open()*
     Return `true` if {bufnr} is being previewed.
 
@@ -158,7 +170,13 @@ Follow mode                                                    *mdlive-follow*
     as LSP hover popups) are ignored, so the preview stays where it is.
 
 Scroll sync                                               *mdlive-scroll-sync*
-    The preview scrolls to keep the block under the cursor in view.
+    The preview shows the same part of the document as the Neovim window
+    and keeps the block under the cursor in view. Scrolling without moving
+    the cursor, such as with CTRL-E or the mouse wheel, scrolls it too.
+
+Jump to source                                                   *mdlive-jump*
+    Double-click a block in the preview to move the Neovim cursor to the
+    line it comes from.
 
 Theme                                                           *mdlive-theme*
     Colors come from highlight groups such as |hl-Normal|, `@markup.heading`,
@@ -166,9 +184,16 @@ Theme                                                           *mdlive-theme*
     colorscheme or 'background' changes.
 
 Markdown                                                     *mdlive-markdown*
-    CommonMark with tables, strikethrough, task lists and heading anchors.
-    Code blocks are highlighted, `$inline$` and `$$block$$` math is rendered
-    with KaTeX, and ```mermaid code blocks are drawn as diagrams.
+    CommonMark with tables, strikethrough, task lists, heading anchors,
+    footnotes and `:emoji:` shortcodes. Code blocks are highlighted and have
+    a copy button, `$inline$` and `$$block$$` math is rendered with KaTeX,
+    and ```mermaid code blocks are drawn as diagrams.
+
+GitHub alerts                                                  *mdlive-alerts*
+    A blockquote starting with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,
+    `[!WARNING]` or `[!CAUTION]` is shown as an alert, colored with the
+    |hl-DiagnosticInfo|, `DiagnosticOk`, `DiagnosticHint`, `DiagnosticWarn`
+    and `DiagnosticError` highlight groups.
 
 Front matter                                             *mdlive-front-matter*
     YAML (`---`) or TOML (`+++`) front matter at the top of the file is shown
@@ -180,6 +205,13 @@ Links and images                                                *mdlive-links*
     the tab shows its preview. Links to other local files open the raw file
     in a new tab, and web links open in a new tab.
 
+Export                                                         *mdlive-export*
+    |:MdLiveExport| saves the page as it looks in the preview, theme colors
+    included, as a single HTML file that needs no network. Relative images
+    and links are rewritten to work from where the file is saved. For a
+    PDF, print the preview from the browser; the copy buttons and status
+    messages are left out of the printout.
+
 ==============================================================================
 8. SECURITY                                                  *mdlive-security*
 
@@ -190,8 +222,9 @@ just cloned, so the preview treats it as untrusted:
   allows the plugin's own scripts, so embedded scripts never run.
 - Files are served only from the directory of the Markdown file and the
   current working directory, in a sandbox that blocks scripts.
-- The server rejects requests with a non-local Host header. Opening a linked
-  file in Neovim needs a same-origin request, so other websites cannot do it.
+- The server rejects requests with a non-local Host header. Requests that act
+  in Neovim (opening a linked file, moving the cursor, saving an export) must
+  come from the preview page itself, so other websites cannot send them.
 
 ==============================================================================
 9. HEALTH CHECK                                                *mdlive-health*
