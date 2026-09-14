@@ -118,7 +118,8 @@ export async function startChrome({ dir, width = 1200, height = 800 }) {
       `--user-data-dir=${join(dir, "chrome")}`,
       "about:blank",
     ],
-    { stdio: ["ignore", "ignore", "pipe"] },
+    // Its own process group, so close() can stop the helper processes as well.
+    { stdio: ["ignore", "ignore", "pipe"], detached: true },
   );
   const endpoint = await new Promise((resolve, reject) => {
     let output = "";
@@ -175,17 +176,25 @@ export async function startChrome({ dir, width = 1200, height = 800 }) {
       const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
       writeFileSync(file, Buffer.from(data, "base64"));
     },
-    // Resolves once Chrome has exited, or after 5 seconds.
+    // Stops Chrome and its helper processes, which otherwise keep writing to the
+    // profile folder for a moment. Resolves once Chrome has exited, or after 5 seconds.
     close() {
       return new Promise((resolve) => {
-        if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
-        const timer = setTimeout(resolve, 5000);
-        proc.once("exit", () => {
-          clearTimeout(timer);
-          resolve();
-        });
         cdp.socket.close();
-        proc.kill();
+        const exited = proc.exitCode !== null || proc.signalCode !== null;
+        const timer = exited ? null : setTimeout(resolve, 5000);
+        if (!exited) {
+          proc.once("exit", () => {
+            clearTimeout(timer);
+            resolve();
+          });
+        }
+        try {
+          process.kill(-proc.pid, "SIGTERM");
+        } catch (_) {
+          proc.kill();
+        }
+        if (exited) resolve();
       });
     },
   };
