@@ -23,12 +23,17 @@ end
 local ok, err = xpcall(function()
   local opened
   require("mdlive.server").request_timeout = 1000
-  require("mdlive").setup({
-    debounce_ms = 20,
-    browser = function(url)
-      opened = url
-    end,
-  })
+  -- The options the checks run with, plus `extra`.
+  local function setup(extra)
+    local opts = {
+      debounce_ms = 20,
+      browser = function(url)
+        opened = url
+      end,
+    }
+    require("mdlive").setup(vim.tbl_extend("force", opts, extra or {}))
+  end
+  setup()
 
   vim.cmd.edit(root .. "/examples/demo.md")
   local buf = vim.api.nvim_get_current_buf()
@@ -204,6 +209,32 @@ local ok, err = xpcall(function()
   local _, content_events = idle_events:gsub("event: content", "")
   check("unchanged buffer is not sent again", content_events == 1, content_events)
 
+  -- setup() again: open previews get the new options, and wrong options are reported.
+  local settings_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
+  vim.wait(300)
+  local warnings = {}
+  local real_notify = vim.notify
+  vim.notify = function(msg)
+    table.insert(warnings, msg)
+  end
+  setup({ code_line_numbers = false, port = "8080", colour = true })
+  vim.notify = real_notify
+  local _, settings_events = settings_stream()
+  check(
+    "setup() sends new options to open previews",
+    settings_events:find('event: settings\ndata: {"code_line_numbers":false}', 1, true),
+    settings_events:match("event: settings\ndata: [^\n]*")
+  )
+  local warning = table.concat(warnings, "\n")
+  check(
+    "setup() warns about wrong options and uses their defaults",
+    warning:find("`port`", 1, true)
+      and warning:find("`colour`", 1, true)
+      and require("mdlive.config").options.port == 0,
+    warning
+  )
+  setup()
+
   local theme = events:match("event: theme\ndata: ([^\n]*)")
   local decoded = theme and vim.json.decode(theme)
   check("theme has colors", decoded and decoded.vars and decoded.vars.fg and decoded.mode, theme)
@@ -287,6 +318,24 @@ local ok, err = xpcall(function()
   messages = {}
   vim.cmd("MdLiveExport " .. export_path)
   check("export refuses to overwrite", (messages[1] or ""):find("exists", 1, true), messages[1])
+
+  -- A write that fails is reported instead of announced as exported.
+  if vim.uv.fs_stat("/dev/full") then
+    local full_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
+    vim.wait(300)
+    messages = {}
+    require("mdlive").export(buf, { path = "/dev/full", force = true })
+    local _, full_events = full_stream()
+    local full_job = full_events:match("event: export\ndata: ([^\n]*)")
+    full_job = full_job and vim.json.decode(full_job)
+    code = get(session .. "/export/" .. (full_job and full_job.id or 0), send_page)
+    local reported = table.concat(messages, "\n")
+    check(
+      "export reports a failed write",
+      code == 404 and reported:find("could not write", 1, true) and not reported:find("exported to", 1, true),
+      reported
+    )
+  end
   vim.notify = notify
 
   require("mdlive").close(guide)
@@ -334,6 +383,21 @@ local ok, err = xpcall(function()
   check("a new server start gets a new token", opened and not opened:find(session .. "/", 1, true), opened)
   require("mdlive").close(guide)
   vim.wait(200)
+
+  -- auto_open previews markdown files, but not LSP hover popups (markdown in a scratch buffer).
+  setup({ auto_open = true })
+  opened = nil
+  local hover = vim.api.nvim_create_buf(false, true)
+  local popup = { relative = "editor", row = 1, col = 1, width = 20, height = 3 }
+  local hover_win = vim.api.nvim_open_win(hover, true, popup)
+  vim.bo[hover].filetype = "markdown"
+  vim.api.nvim_win_close(hover_win, true)
+  check("auto_open skips LSP hover popups", opened == nil and not require("mdlive").is_open(hover), opened)
+  vim.cmd.edit(notes .. "/index.md")
+  check("auto_open previews markdown files", opened ~= nil and require("mdlive").is_open(notes_buf), opened)
+  require("mdlive").close(notes_buf)
+  vim.wait(200)
+  setup()
 
   vim.cmd("checkhealth mdlive")
   -- Newer Neovim versions fill the report asynchronously.

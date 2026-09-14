@@ -24,10 +24,43 @@ M.defaults = {
   code_line_numbers = true,
 }
 
+-- Accepted type(s) of every option; also the list of known options.
+M.types = {
+  host = { "string" },
+  port = { "number" },
+  browser = { "string", "table", "function" },
+  debounce_ms = { "number" },
+  auto_open = { "boolean" },
+  filetypes = { "table" },
+  follow = { "boolean" },
+  scroll_sync = { "boolean" },
+  follow_theme = { "boolean" },
+  code_line_numbers = { "boolean" },
+}
+
 M.options = vim.deepcopy(M.defaults)
 
+-- What was wrong with the options last given to setup(); :checkhealth shows it too.
+M.problems = {}
+
 function M.setup(opts)
-  M.options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
+  local options = vim.deepcopy(M.defaults)
+  M.problems = {}
+  for key, value in pairs(opts or {}) do
+    local types = M.types[key]
+    if not types then
+      table.insert(M.problems, ("unknown option `%s`"):format(key))
+    elseif not vim.tbl_contains(types, type(value)) then
+      local problem = "option `%s` should be a %s, got %s: using the default"
+      table.insert(M.problems, problem:format(key, table.concat(types, " or "), type(value)))
+    else
+      options[key] = value
+    end
+  end
+  M.options = options
+  if #M.problems > 0 then
+    vim.notify("[mdlive] " .. table.concat(M.problems, "\n"), vim.log.levels.WARN)
+  end
 end
 
 return M

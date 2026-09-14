@@ -21,20 +21,6 @@ local assets = {
   "app/vendor/mermaid.min.js",
 }
 
--- Expected type(s) of every option; also the list of known options.
-local option_types = {
-  host = "string",
-  port = "number",
-  browser = { "string", "table", "function" },
-  debounce_ms = "number",
-  auto_open = "boolean",
-  filetypes = "table",
-  follow = "boolean",
-  scroll_sync = "boolean",
-  follow_theme = "boolean",
-  code_line_numbers = "boolean",
-}
-
 local function check_installation()
   health.start("mdlive: installation")
   if vim.fn.has("nvim-0.11") == 1 then
@@ -57,19 +43,11 @@ end
 
 local function check_config()
   health.start("mdlive: configuration")
-  local problems = 0
-  for key, value in pairs(require("mdlive.config").options) do
-    local expected = option_types[key]
-    if not expected then
-      problems = problems + 1
-      health.warn(("Unknown option `%s`"):format(key), { "Check the spelling, see :help mdlive-configuration" })
-    elseif not vim.tbl_contains(type(expected) == "table" and expected or { expected }, type(value)) then
-      problems = problems + 1
-      local wanted = type(expected) == "table" and table.concat(expected, " or ") or expected
-      health.error(("Option `%s` should be a %s, got %s"):format(key, wanted, type(value)))
-    end
+  local problems = require("mdlive.config").problems
+  for _, problem in ipairs(problems) do
+    health.warn((problem:gsub("^%l", string.upper)), { "Fix it in setup(), see :help mdlive-configuration" })
   end
-  if problems == 0 then
+  if #problems == 0 then
     health.ok("Options are valid")
   end
 end

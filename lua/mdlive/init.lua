@@ -229,13 +229,18 @@ local function receive_export(id, html, err)
     notify("export failed: " .. (err or "the preview sent an empty page"), vim.log.levels.ERROR)
     return true
   end
-  local file, open_err = io.open(job.path, "wb")
-  if not file then
-    notify("could not write " .. job.path .. ": " .. tostring(open_err), vim.log.levels.ERROR)
+  local file, err = io.open(job.path, "wb")
+  local ok = file ~= nil
+  if file then
+    -- A full disk can also make the final flush in close() fail.
+    local written, write_err = file:write(html)
+    local closed, close_err = file:close()
+    ok, err = written and closed, write_err or close_err
+  end
+  if not ok then
+    notify("could not write " .. job.path .. ": " .. tostring(err), vim.log.levels.ERROR)
     return nil, "could not write the file"
   end
-  file:write(html)
-  file:close()
   notify("exported to " .. vim.fn.fnamemodify(job.path, ":~:."))
   return true
 end
@@ -298,6 +303,21 @@ end
 local function buf_label(bufnr)
   local name = vim.fn.fnamemodify(api.nvim_buf_get_name(bufnr), ":t")
   return name ~= "" and name or "[No Name]"
+end
+
+-- Whether auto_open and follow mode should preview a buffer: a file of
+-- `filetypes` in a normal window. Special buffers such as LSP hover popups are
+-- markdown too.
+local function wants_preview(bufnr)
+  if vim.bo[bufnr].buftype ~= "" or not vim.tbl_contains(config.options.filetypes, vim.bo[bufnr].filetype) then
+    return false
+  end
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    if api.nvim_win_get_config(win).relative == "" then
+      return true
+    end
+  end
+  return false
 end
 
 -- Stops syncing a buffer without telling its tabs.
@@ -463,11 +483,18 @@ function M.setup(opts)
       group = group,
       pattern = config.options.filetypes,
       callback = function(ev)
-        if not previews[ev.buf] then
+        if not previews[ev.buf] and wants_preview(ev.buf) then
           M.open(ev.buf)
         end
       end,
     })
+  end
+  -- Open previews pick up the new options.
+  if next(previews) then
+    send_theme()
+    for bufnr in pairs(previews) do
+      send_settings(bufnr)
+    end
   end
 end
 
@@ -506,9 +533,7 @@ api.nvim_create_autocmd({ "BufEnter", "FileType" }, {
     if ev.buf == active or ev.buf ~= api.nvim_get_current_buf() or not is_following() then
       return
     end
-    local wanted = vim.tbl_contains(config.options.filetypes, vim.bo[ev.buf].filetype)
-    -- Skip special buffers such as LSP hover popups, which are markdown too.
-    if wanted and vim.bo[ev.buf].buftype == "" and api.nvim_win_get_config(0).relative == "" then
+    if wants_preview(ev.buf) and api.nvim_win_get_config(0).relative == "" then
       follow(ev.buf)
     end
   end,

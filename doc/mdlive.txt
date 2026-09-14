@@ -91,6 +91,10 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
       code_line_numbers = true,
     })
 <
+Unknown options and options of the wrong type are reported with a warning, and
+the wrong ones keep their default. `:checkhealth mdlive` lists them too.
+Calling |mdlive.setup()| again also updates previews that are open.
+
 host                                                      *mdlive-config-host*
     Type: `string`, default: `"127.0.0.1"`
     Address the server binds to. Keep it on a loopback address: the preview
