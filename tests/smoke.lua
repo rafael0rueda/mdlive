@@ -64,6 +64,22 @@ local ok, err = xpcall(function()
   check("blocks file traversal", get("/files/" .. buf .. "/../../../../../../etc/passwd") == 404)
   check("blocks encoded traversal", get("/files/" .. buf .. "/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd") == 404)
   check("rejects foreign Host header", get("/app/preview.js", { "-H", "Host: evil.example" }) == 403)
+
+  -- Symlinks are followed only when they stay inside the allowed directories.
+  local sandbox = vim.fn.tempname()
+  local notes, secrets = sandbox .. "/notes", sandbox .. "/secrets"
+  vim.fn.mkdir(notes, "p")
+  vim.fn.mkdir(secrets, "p")
+  vim.fn.writefile({ "secret" }, secrets .. "/key.txt")
+  vim.fn.writefile({ "<svg xmlns='http://www.w3.org/2000/svg'/>" }, notes .. "/real.svg")
+  vim.fn.writefile({ "# Notes" }, notes .. "/index.md")
+  assert(vim.uv.fs_symlink(secrets, notes .. "/secrets"))
+  assert(vim.uv.fs_symlink(secrets .. "/key.txt", notes .. "/key.txt"))
+  assert(vim.uv.fs_symlink(notes .. "/real.svg", notes .. "/alias.svg"))
+  local notes_buf = vim.fn.bufadd(notes .. "/index.md")
+  check("blocks symlinked directory pointing outside", get("/files/" .. notes_buf .. "/secrets/key.txt") == 404)
+  check("blocks symlinked file pointing outside", get("/files/" .. notes_buf .. "/key.txt") == 404)
+  check("serves symlink pointing inside", get("/files/" .. notes_buf .. "/alias.svg") == 200)
   check("unknown buffer events 404", get("/events/99999") == 404)
 
   local head_only = { "-o", "/dev/null", "-D", "-" }

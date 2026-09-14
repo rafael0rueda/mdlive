@@ -115,12 +115,18 @@ local page_policy = table.concat({
 -- an untrusted repository cannot run scripts that talk to this server.
 local file_policy = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
 
--- Resolves `rel` against `dir` and returns it only if it stays inside one of `roots`.
+-- Resolves `rel` against `dir` and returns it only if it stays inside one of
+-- `roots`. Symlinks are resolved first, so a link cannot point outside them.
 local function resolve(dir, rel, roots)
-  local full = vim.fs.normalize(vim.fs.joinpath(dir, rel))
+  local real = uv.fs_realpath(vim.fs.joinpath(dir, rel))
+  if not real then
+    return nil
+  end
+  real = vim.fs.normalize(real)
   for _, r in ipairs(roots) do
-    if vim.fs.relpath(r, full) then
-      return full
+    local real_root = uv.fs_realpath(r)
+    if real_root and vim.fs.relpath(vim.fs.normalize(real_root), real) then
+      return real
     end
   end
 end

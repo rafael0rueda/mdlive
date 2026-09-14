@@ -758,8 +758,29 @@
     }
   });
 
+  // The browser retries a lost connection on its own. When Neovim quits, stop
+  // after a few failed attempts instead of retrying forever; a click on the
+  // status message tries again.
+  const maxAttempts = 5;
+  let retry = null;
+
+  statusEl.addEventListener("click", () => retry?.());
+
+  function giveUp(events) {
+    events.close();
+    setStatus("Can't reach Neovim · click to retry");
+    statusEl.classList.add("retry");
+    retry = () => {
+      retry = null;
+      statusEl.classList.remove("retry");
+      setStatus("Reconnecting to Neovim…");
+      connect();
+    };
+  }
+
   function connect() {
     const events = new EventSource(`/events/${bufnr}`);
+    let failures = 0;
 
     events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
     events.addEventListener("content", (e) => {
@@ -799,9 +820,18 @@
       events.close();
       setStatus("Preview stopped in Neovim");
     });
-    events.onopen = () => setStatus(null);
+    events.onopen = () => {
+      failures = 0;
+      setStatus(null);
+    };
     events.onerror = () => {
-      setStatus(events.readyState === EventSource.CLOSED ? "Disconnected from Neovim" : "Reconnecting to Neovim…");
+      failures++;
+      // CLOSED: the server answered but has no preview for this buffer any more.
+      if (events.readyState === EventSource.CLOSED || failures >= maxAttempts) {
+        giveUp(events);
+      } else {
+        setStatus("Reconnecting to Neovim…");
+      }
     };
   }
 

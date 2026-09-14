@@ -94,6 +94,14 @@ body {
   font: 13px/1.4 system-ui, sans-serif;
 }
 
+#status.retry {
+  cursor: pointer;
+}
+
+#status.retry:hover {
+  color: var(--fg);
+}
+
 .markdown-body {
   max-width: 900px;
   margin: 0 auto;
