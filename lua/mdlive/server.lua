@@ -10,11 +10,21 @@ local app_dir = vim.fs.joinpath(root, "app")
 local max_head = 64 * 1024
 -- Exports send the whole rendered page, with fonts and diagrams inlined.
 local max_body = 64 * 1024 * 1024
+-- A browser tab that stopped reading is dropped once this much is waiting to
+-- be sent; it reconnects and gets the whole buffer again.
+local max_queue = 32 * 1024 * 1024
+
+-- Connections that have not sent a whole request by then are closed. A field
+-- so the tests can shorten it.
+M.request_timeout = 10000
 
 local state = {
   server = nil,
   host = nil,
   port = nil,
+  -- Random per server start; every URL except the bundled /app files needs it,
+  -- so other users and programs on the machine cannot read or act on previews.
+  token = nil,
   heartbeat = nil,
   handlers = nil,
   clients = {}, -- [bufnr] = { [socket] = true }
@@ -58,6 +68,14 @@ local function drop(sock)
   close(sock)
 end
 
+-- Writes to a live preview connection, dropping it if it stopped reading.
+local function send(sock, payload)
+  if sock:get_write_queue_size() > max_queue then
+    return drop(sock)
+  end
+  sock:write(payload)
+end
+
 local function url_decode(s)
   return (s:gsub("%%(%x%x)", function(h)
     return string.char(tonumber(h, 16))
@@ -80,6 +98,8 @@ local function respond(sock, status, headers, body)
   headers["Connection"] = "close"
   headers["X-Content-Type-Options"] = "nosniff"
   headers["Referrer-Policy"] = "no-referrer"
+  -- Other websites cannot embed these responses, e.g. to probe for local files.
+  headers["Cross-Origin-Resource-Policy"] = "same-origin"
   for k, v in pairs(headers) do
     lines[#lines + 1] = k .. ": " .. v
   end
@@ -157,6 +177,8 @@ local function subscribe(sock, bufnr)
     "Content-Type: text/event-stream",
     "Cache-Control: no-cache",
     "Connection: keep-alive",
+    "X-Content-Type-Options: nosniff",
+    "Cross-Origin-Resource-Policy: same-origin",
     "",
     "",
   }, "\r\n"))
@@ -198,7 +220,8 @@ local function post(sock, path, target, headers, body)
       result, err = h.open_link(id, query_param(target, "path") or "")
     else
       -- /jump/<bufnr>?line=: a block was double-clicked.
-      result, err = h.jump(id, tonumber(query_param(target, "line")))
+      local line = query_param(target, "line")
+      result, err = h.jump(id, line and line:match("^%d+$") and tonumber(line))
     end
   else
     return json(sock, "404 Not Found", { error = "not found" })
@@ -219,6 +242,18 @@ local function handle(sock, request)
   local path = url_decode((target:gsub("[?#].*$", "")))
   local h = state.handlers
 
+  -- The bundled page scripts and styles hold nothing private.
+  local asset = path:match("^/app/(.+)$")
+  if asset and method == "GET" then
+    return serve_file(sock, resolve(app_dir, asset, { app_dir }))
+  end
+
+  local token, rest = path:match("^/(%x+)(/.*)$")
+  if not token or token ~= state.token then
+    return text(sock, "404 Not Found", "Not found")
+  end
+  path = rest
+
   if method == "POST" then
     return post(sock, path, target, headers, request.body)
   end
@@ -238,14 +273,11 @@ local function handle(sock, request)
     return subscribe(sock, bufnr)
   end
 
-  local asset = path:match("^/app/(.+)$")
-  if asset then
-    return serve_file(sock, resolve(app_dir, asset, { app_dir }))
-  end
-
   local b, file = path:match("^/files/(%d+)/(.+)$")
+  b = tonumber(b)
   if b then
-    local dir = h.buffer_dir(tonumber(b))
+    -- Only for buffers being previewed, not every file open in Neovim.
+    local dir = h.is_previewed(b) and h.buffer_dir(b)
     local full = dir and resolve(dir, file, { dir, vim.fn.getcwd() })
     -- PDFs cannot script this origin, and browsers refuse to show them sandboxed.
     local is_pdf = full and full:lower():match("%.pdf$")
@@ -272,8 +304,17 @@ local function on_connection(err)
   state.server:accept(sock)
 
   local chunks, size, request, handled = {}, 0, nil, false
+  local timer = uv.new_timer()
+  timer:start(M.request_timeout, 0, function()
+    close(timer)
+    if not handled then
+      handled = true
+      drop(sock)
+    end
+  end)
   sock:read_start(function(read_err, chunk)
     if read_err or not chunk then
+      close(timer)
       return drop(sock)
     end
     if handled then
@@ -289,6 +330,7 @@ local function on_connection(err)
       if not head_end then
         if size > max_head then
           handled = true
+          close(timer)
           drop(sock)
         end
         return
@@ -307,6 +349,7 @@ local function on_connection(err)
     end
 
     handled = true
+    close(timer)
     if not request.error then
       request.body = table.concat(chunks):sub(request.body_start, request.body_start + request.length - 1)
     end
@@ -344,6 +387,9 @@ function M.start(opts)
     return nil, err
   end
   state.server, state.host, state.handlers = server, opts.host, opts
+  state.token = assert(uv.random(16)):gsub(".", function(c)
+    return ("%02x"):format(c:byte())
+  end)
   ok, err = server:listen(128, on_connection)
   if not ok then
     M.stop()
@@ -357,7 +403,7 @@ function M.start(opts)
     for _, set in pairs(state.clients) do
       for sock in pairs(set) do
         if not sock:is_closing() then
-          sock:write(": ping\n\n")
+          send(sock, ": ping\n\n")
         end
       end
     end
@@ -374,7 +420,7 @@ function M.stop()
   state.clients = {}
   close(state.heartbeat)
   close(state.server)
-  state.server, state.port, state.heartbeat, state.handlers = nil, nil, nil, nil
+  state.server, state.port, state.token, state.heartbeat, state.handlers = nil, nil, nil, nil, nil
 end
 
 function M.is_running()
@@ -406,7 +452,7 @@ function M.broadcast(bufnr, event, data)
     if sock:is_closing() then
       set[sock] = nil
     else
-      sock:write(payload)
+      send(sock, payload)
     end
   end
 end
@@ -419,6 +465,11 @@ function M.disconnect(bufnr)
   state.clients[bufnr] = nil
 end
 
+--- Path of a buffer's preview page, token included.
+function M.preview_path(bufnr)
+  return ("/%s/preview/%d"):format(state.token, bufnr)
+end
+
 function M.url(bufnr)
   local host = state.host
   if host == "0.0.0.0" or host == "::" then
@@ -426,7 +477,7 @@ function M.url(bufnr)
   elseif host:find(":", 1, true) then
     host = "[" .. host .. "]"
   end
-  return ("http://%s:%d/preview/%d"):format(host, state.port, bufnr)
+  return ("http://%s:%d%s"):format(host, state.port, M.preview_path(bufnr))
 end
 
 return M

@@ -1,7 +1,11 @@
 (function () {
   "use strict";
 
-  let bufnr = location.pathname.match(/\/preview\/(\d+)/)[1];
+  // The page is at /<token>/preview/<bufnr>; every request to the server but
+  // the bundled /app files needs the token.
+  const pageMatch = location.pathname.match(/^(\/[0-9a-f]+)\/preview\/(\d+)/);
+  const session = pageMatch[1];
+  let bufnr = pageMatch[2];
   const root = document.documentElement;
   const contentEl = document.getElementById("content");
   const statusEl = document.getElementById("status");
@@ -170,7 +174,7 @@
     // Relative images are served from the markdown file's directory.
     for (const img of fragment.querySelectorAll("img[src]")) {
       const src = img.getAttribute("src");
-      if (isRelative(src)) img.setAttribute("src", `/files/${bufnr}/${src}`);
+      if (isRelative(src)) img.setAttribute("src", `${session}/files/${bufnr}/${src}`);
     }
 
     for (const link of fragment.querySelectorAll("a[href]")) {
@@ -184,7 +188,7 @@
       const [, path, hash = ""] = /^([^?#]*)(?:\?[^#]*)?(#.*)?$/.exec(href);
       if (!path) continue;
       // Local files are served raw; markdown files are opened in Neovim on click.
-      link.setAttribute("href", `/files/${bufnr}/${path}`);
+      link.setAttribute("href", `${session}/files/${bufnr}/${path}`);
       if (isMarkdown(path)) {
         link.dataset.openPath = safeDecode(path);
         link.dataset.openHash = hash;
@@ -648,7 +652,8 @@
   // A standalone page: styles and fonts inlined, relative files resolved through `base`.
   async function standaloneHtml(base) {
     const page = contentEl.cloneNode(true);
-    const prefix = `/files/${bufnr}/`;
+    // Rewriting these also keeps the token out of the exported file.
+    const prefix = `${session}/files/${bufnr}/`;
     for (const el of page.querySelectorAll("[src], [href]")) {
       for (const name of ["src", "href"]) {
         const value = el.getAttribute(name);
@@ -698,7 +703,7 @@
       query = `?error=${encodeURIComponent(String((err && err.message) || err))}`;
     }
     try {
-      await fetch(`/export/${id}${query}`, {
+      await fetch(`${session}/export/${id}${query}`, {
         method: "POST",
         headers: { "X-MdLive": "1", "Content-Type": "text/html; charset=utf-8" },
         body,
@@ -711,7 +716,7 @@
   // ------------------------------------------------------------------ events
 
   function post(path) {
-    return fetch(path, { method: "POST", headers: { "X-MdLive": "1" } }).then(async (response) => {
+    return fetch(session + path, { method: "POST", headers: { "X-MdLive": "1" } }).then(async (response) => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       return data;
@@ -795,7 +800,7 @@
   }
 
   function connect() {
-    const events = new EventSource(`/events/${bufnr}`);
+    const events = new EventSource(`${session}/events/${bufnr}`);
     let failures = 0;
 
     events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
@@ -832,7 +837,7 @@
       if (navigating) return;
       events.close();
       bufnr = String(JSON.parse(e.data).bufnr);
-      history.replaceState(null, "", `/preview/${bufnr}`);
+      history.replaceState(null, "", `${session}/preview/${bufnr}`);
       cursor = null;
       pendingText = null;
       pendingScroll = false;

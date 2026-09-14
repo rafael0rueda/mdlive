@@ -22,6 +22,7 @@ end
 
 local ok, err = xpcall(function()
   local opened
+  require("mdlive.server").request_timeout = 1000
   require("mdlive").setup({
     debounce_ms = 20,
     browser = function(url)
@@ -32,8 +33,12 @@ local ok, err = xpcall(function()
   vim.cmd.edit(root .. "/examples/demo.md")
   local buf = vim.api.nvim_get_current_buf()
   vim.cmd("MdLive")
-  check("opens preview url", opened and opened:match("^http://127%.0%.0%.1:%d+/preview/" .. buf .. "$"), opened)
-  local base = opened:match("^(http://[^/]+)")
+  check(
+    "opens preview url with a token",
+    opened and opened:match("^http://127%.0%.0%.1:%d+/" .. ("%x"):rep(32) .. "/preview/" .. buf .. "$"),
+    opened
+  )
+  local base, session = opened:match("^(http://[^/]+)(/%x+)/")
 
   local function curl(path, extra, max_time)
     local args = { "curl", "-s", "--path-as-is", "-w", "\n%{http_code}", "--max-time", tostring(max_time or 3) }
@@ -55,15 +60,46 @@ local ok, err = xpcall(function()
     return curl(path, extra)()
   end
 
-  local code, body = get("/preview/" .. buf)
+  local code, body = get(session .. "/preview/" .. buf)
   check("serves index.html", code == 200 and body:find("preview.js", 1, true), code)
   check("serves app script", get("/app/preview.js") == 200)
   check("serves katex font", get("/app/vendor/katex/fonts/KaTeX_Main-Regular.woff2") == 200)
-  check("serves relative image", get("/files/" .. buf .. "/assets/logo.svg") == 200)
+  check("serves relative image", get(session .. "/files/" .. buf .. "/assets/logo.svg") == 200)
   check("blocks app traversal", get("/app/../lua/mdlive/init.lua") == 404)
-  check("blocks file traversal", get("/files/" .. buf .. "/../../../../../../etc/passwd") == 404)
-  check("blocks encoded traversal", get("/files/" .. buf .. "/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd") == 404)
+  check("blocks file traversal", get(session .. "/files/" .. buf .. "/../../../../../../etc/passwd") == 404)
+  check(
+    "blocks encoded traversal",
+    get(session .. "/files/" .. buf .. "/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd") == 404
+  )
   check("rejects foreign Host header", get("/app/preview.js", { "-H", "Host: evil.example" }) == 403)
+
+  -- Everything but the bundled /app files needs the token of this server start.
+  check("page needs the token", get("/preview/" .. buf) == 404)
+  check("files need the token", get("/files/" .. buf .. "/assets/logo.svg") == 404)
+  check("events need the token", get("/events/" .. buf) == 404)
+  check("rejects a wrong token", get("/" .. ("0"):rep(32) .. "/files/" .. buf .. "/assets/logo.svg") == 404)
+
+  -- A connection that never finishes its request is closed.
+  local client, client_closed = vim.uv.new_tcp(), false
+  client:connect("127.0.0.1", tonumber(base:match(":(%d+)$")), function(connect_err)
+    if connect_err then
+      client_closed = true
+      return
+    end
+    client:write("GET /app/preview.js HTTP/1.1\r\n")
+    client:read_start(function(read_err, chunk)
+      if read_err or not chunk then
+        client_closed = true
+      end
+    end)
+  end)
+  check(
+    "unfinished requests time out",
+    vim.wait(3000, function()
+      return client_closed
+    end, 10)
+  )
+  client:close()
 
   -- Symlinks are followed only when they stay inside the allowed directories.
   local sandbox = vim.fn.tempname()
@@ -77,30 +113,36 @@ local ok, err = xpcall(function()
   assert(vim.uv.fs_symlink(secrets .. "/key.txt", notes .. "/key.txt"))
   assert(vim.uv.fs_symlink(notes .. "/real.svg", notes .. "/alias.svg"))
   local notes_buf = vim.fn.bufadd(notes .. "/index.md")
-  check("blocks symlinked directory pointing outside", get("/files/" .. notes_buf .. "/secrets/key.txt") == 404)
-  check("blocks symlinked file pointing outside", get("/files/" .. notes_buf .. "/key.txt") == 404)
-  check("serves symlink pointing inside", get("/files/" .. notes_buf .. "/alias.svg") == 200)
-  check("unknown buffer events 404", get("/events/99999") == 404)
+  check("serves no files for buffers without a preview", get(session .. "/files/" .. notes_buf .. "/real.svg") == 404)
+  require("mdlive").open(notes_buf)
+  local notes_files = session .. "/files/" .. notes_buf
+  check("blocks symlinked directory pointing outside", get(notes_files .. "/secrets/key.txt") == 404)
+  check("blocks symlinked file pointing outside", get(notes_files .. "/key.txt") == 404)
+  check("serves symlink pointing inside", get(notes_files .. "/alias.svg") == 200)
+  check("unknown buffer events 404", get(session .. "/events/99999") == 404)
+  -- Back to the demo buffer's preview.
+  vim.cmd("MdLive")
 
   local head_only = { "-o", "/dev/null", "-D", "-" }
-  local _, page_headers = get("/preview/" .. buf, head_only)
+  local _, page_headers = get(session .. "/preview/" .. buf, head_only)
   page_headers = page_headers:lower()
   check(
     "page has content security policy",
     page_headers:find("content-security-policy: default-src 'none'; script-src 'self';", 1, true),
     page_headers
   )
-  local _, file_headers = get("/files/" .. buf .. "/assets/logo.svg", head_only)
+  local _, file_headers = get(session .. "/files/" .. buf .. "/assets/logo.svg", head_only)
   file_headers = file_headers:lower()
   check(
     "local files are sandboxed",
     file_headers:find("content-security-policy: sandbox", 1, true)
-      and file_headers:find("x-content-type-options: nosniff", 1, true),
+      and file_headers:find("x-content-type-options: nosniff", 1, true)
+      and file_headers:find("cross-origin-resource-policy: same-origin", 1, true),
     file_headers
   )
 
   -- Live stream: connect, edit the buffer, move the cursor, then read what arrived.
-  local stream = curl("/events/" .. buf, { "-N" }, 1.5)
+  local stream = curl(session .. "/events/" .. buf, { "-N" }, 1.5)
   vim.wait(300)
   opened = nil
   vim.cmd("MdLive")
@@ -133,7 +175,7 @@ local ok, err = xpcall(function()
   )
 
   -- TextChanged without a change to the text sends nothing new.
-  local idle_stream = curl("/events/" .. buf, { "-N" }, 1)
+  local idle_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
   vim.wait(300)
   vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
   local _, idle_events = idle_stream()
@@ -145,7 +187,7 @@ local ok, err = xpcall(function()
   check("theme has colors", decoded and decoded.vars and decoded.vars.fg and decoded.mode, theme)
 
   -- Clicking relative markdown links in the preview.
-  local open = "/open/" .. buf .. "?path="
+  local open = session .. "/open/" .. buf .. "?path="
   local same_origin = { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: " .. base }
   check(
     "open link needs custom header",
@@ -167,19 +209,21 @@ local ok, err = xpcall(function()
   )
   check(
     "open link returns its preview",
-    ok_json and data.url == "/preview/" .. guide and require("mdlive").is_open(guide),
+    ok_json and data.url == session .. "/preview/" .. guide and require("mdlive").is_open(guide),
     body
   )
-  code, body = get("/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
+  code, body = get(session .. "/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
   check("link back reuses the demo buffer", code == 200 and vim.api.nvim_get_current_buf() == buf, body)
 
   -- Double-clicking a block in the preview moves the cursor to its source line.
-  code, body = get("/jump/" .. buf .. "?line=15", same_origin)
+  code, body = get(session .. "/jump/" .. buf .. "?line=15", same_origin)
   check("jump moves the cursor", code == 200 and vim.api.nvim_win_get_cursor(0)[1] == 16, body)
   check(
     "jump needs custom header",
-    get("/jump/" .. buf .. "?line=1", { "-X", "POST", "-H", "Origin: " .. base }) == 403
+    get(session .. "/jump/" .. buf .. "?line=1", { "-X", "POST", "-H", "Origin: " .. base }) == 403
   )
+  check("jump needs the token", get("/jump/" .. buf .. "?line=1", same_origin) == 404)
+  check("jump only takes line numbers", get(session .. "/jump/" .. buf .. "?line=inf", same_origin) == 404)
 
   -- :MdLiveExport: the connected tab renders the page and Neovim writes it.
   local messages = {}
@@ -190,7 +234,7 @@ local ok, err = xpcall(function()
   local out_dir = vim.fn.tempname()
   vim.fn.mkdir(out_dir, "p")
   local export_path = out_dir .. "/demo.html"
-  local export_stream = curl("/events/" .. buf, { "-N" }, 1)
+  local export_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
   vim.wait(300)
   vim.cmd("MdLiveExport " .. export_path)
   local _, export_events = export_stream()
@@ -209,14 +253,14 @@ local ok, err = xpcall(function()
   f:write(page)
   f:close()
   local send_page = vim.list_extend({ "--data-binary", "@" .. page_file }, same_origin)
-  code, body = get("/export/" .. (job and job.id or 0), send_page)
+  code, body = get(session .. "/export/" .. (job and job.id or 0), send_page)
   f = io.open(export_path, "rb")
   local written = f and f:read("*a")
   if f then
     f:close()
   end
   check("export writes the page", code == 200 and written == page, body)
-  check("export answers each request once", get("/export/" .. (job and job.id or 0), send_page) == 404)
+  check("export answers each request once", get(session .. "/export/" .. (job and job.id or 0), send_page) == 404)
 
   messages = {}
   vim.cmd("MdLiveExport " .. export_path)
@@ -228,7 +272,7 @@ local ok, err = xpcall(function()
 
   -- Follow mode: a connected tab switches to the markdown buffer you enter.
   opened = nil
-  local follow_stream = curl("/events/" .. buf, { "-N" }, 1.5)
+  local follow_stream = curl(session .. "/events/" .. buf, { "-N" }, 1.5)
   vim.wait(300)
   vim.cmd.edit(root .. "/examples/docs/guide.md")
   guide = vim.api.nvim_get_current_buf()
@@ -242,7 +286,7 @@ local ok, err = xpcall(function()
   check("follow drops the previous preview", require("mdlive").is_open(guide) and not require("mdlive").is_open(buf))
 
   -- LSP hover popups are markdown buffers in floating windows: not followed.
-  local float_stream = curl("/events/" .. guide, { "-N" }, 1)
+  local float_stream = curl(session .. "/events/" .. guide, { "-N" }, 1)
   vim.wait(300)
   local scratch = vim.api.nvim_create_buf(false, true)
   vim.bo[scratch].filetype = "markdown"
@@ -262,6 +306,12 @@ local ok, err = xpcall(function()
   check("MdLiveStop stops the followed preview from anywhere", not require("mdlive").is_open(guide))
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)
+
+  opened = nil
+  require("mdlive").open(guide)
+  check("a new server start gets a new token", opened and not opened:find(session .. "/", 1, true), opened)
+  require("mdlive").close(guide)
+  vim.wait(200)
 
   vim.cmd("checkhealth mdlive")
   -- Newer Neovim versions fill the report asynchronously.

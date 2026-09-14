@@ -196,7 +196,7 @@ local function open_link(from_buf, rel)
   if not previews[target] then
     attach(target)
   end
-  return "/preview/" .. target
+  return server.preview_path(target)
 end
 
 -- A block was double-clicked in the preview: move the cursor to its source line (0-based).

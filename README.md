@@ -122,6 +122,10 @@ for example a README in a repository you just cloned:
   and the current working directory, with a `sandbox` policy so an `.html` or
   `.svg` file cannot run scripts either. Symlinks are resolved before that
   check, so a link cannot point outside those directories.
+- Preview URLs contain a random token, new each time the server starts. The
+  page, its events, files and actions all need it, so other users or programs
+  on the machine cannot read your buffers or files through the server. Files
+  are only served for buffers that are being previewed.
 - The server listens on `127.0.0.1` and rejects requests with a non-local
   `Host` header. Requests that act in Neovim (opening a linked file, moving
   the cursor, saving an export) need a same-origin request with a custom

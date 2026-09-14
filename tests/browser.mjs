@@ -64,6 +64,8 @@ try {
     features,
   );
   check("tab title is the file name", features.title === "demo.md · mdlive", features.title);
+  const imageLoaded = await waitFor(() => page.eval(`document.querySelector('img[alt="Local image"]')?.naturalWidth > 0`));
+  check("relative images load through the token URL", imageLoaded);
 
   // Untrusted HTML -----------------------------------------------------------
 
@@ -183,6 +185,8 @@ try {
     html && html.includes('class="katex"') && html.includes("<svg") && !html.includes("data-line") && !html.includes("<script"),
     html ? html.slice(0, 120) : html,
   );
+  const token = new URL(nvim.url).pathname.split("/")[1];
+  check("the exported page does not contain the server token", html && !html.includes(token));
 
   // Neovim goes away without closing the preview -----------------------------
 
