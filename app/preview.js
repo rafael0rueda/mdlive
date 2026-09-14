@@ -9,6 +9,8 @@
   let mode = systemMode();
   let cursor = null;
   let documentName = "";
+  let lastText = null;
+  const settings = { lineNumbers: true };
   // Arrived through a link like guide.md#install: scroll there instead of to the cursor.
   let pendingAnchor = location.hash.length > 1 ? safeDecode(location.hash.slice(1)) : null;
   let ignoreCursor = pendingAnchor !== null;
@@ -241,9 +243,19 @@
       quote.prepend(title);
     }
 
-    // Copy buttons on code blocks.
+    // Copy buttons, and line numbers on code blocks with more than one line.
     for (const pre of fragment.querySelectorAll("pre")) {
-      if (!pre.querySelector(":scope > code") || pre.closest(".front-matter")) continue;
+      const code = pre.querySelector(":scope > code");
+      if (!code || pre.closest(".front-matter")) continue;
+      const lines = code.textContent.replace(/\n$/, "").split("\n").length;
+      if (settings.lineNumbers && lines > 1) {
+        const gutter = document.createElement("span");
+        gutter.className = "line-numbers";
+        gutter.setAttribute("aria-hidden", "true");
+        gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
+        pre.prepend(gutter);
+        pre.classList.add("numbered");
+      }
       const wrapper = document.createElement("div");
       wrapper.className = "code-block";
       const button = document.createElement("button");
@@ -711,7 +723,7 @@
   contentEl.addEventListener("click", async (event) => {
     const copy = event.target.closest(".copy-code");
     if (copy) {
-      const code = copy.parentElement.querySelector("pre").textContent;
+      const code = copy.parentElement.querySelector("pre > code").textContent;
       try {
         await navigator.clipboard.writeText(code);
         copy.textContent = "Copied";
@@ -741,7 +753,11 @@
   // Double-clicking a block moves the Neovim cursor to its source line.
   contentEl.addEventListener("dblclick", async (event) => {
     if (event.target.closest("a, button, input, summary")) return;
-    const block = event.target.closest("[data-source], [data-line]");
+    // A line number stands for the same line of the code next to it.
+    const gutter = event.target.closest(".line-numbers");
+    const block = gutter
+      ? gutter.parentElement.querySelector(":scope > code")
+      : event.target.closest("[data-source], [data-line]");
     if (!block) return;
     const [first, last] = (block.dataset.source || `${block.dataset.line}-${Number(block.dataset.line) + 1}`)
       .split("-")
@@ -787,8 +803,17 @@
       const data = JSON.parse(e.data);
       documentName = data.name || "";
       document.title = `${documentName || "[No Name]"} · mdlive`;
-      pendingText = data.text;
+      pendingText = lastText = data.text;
       scheduleUpdate();
+    });
+    events.addEventListener("settings", (e) => {
+      const lineNumbers = JSON.parse(e.data).code_line_numbers !== false;
+      if (lineNumbers === settings.lineNumbers) return;
+      settings.lineNumbers = lineNumbers;
+      if (lastText !== null) {
+        pendingText = lastText;
+        scheduleUpdate();
+      }
     });
     events.addEventListener("cursor", (e) => {
       if (ignoreCursor) {

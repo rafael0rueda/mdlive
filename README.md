@@ -11,7 +11,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Scroll sync with the window and cursor, and double-click the preview to
   jump to the source line in Neovim
 - Code highlighting (highlight.js) using your colorscheme's syntax colors,
-  with a copy button on code blocks
+  with line numbers and a copy button on code blocks
 - Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
 - Tables, task lists, heading anchors, footnotes, `:emoji:` shortcodes and
   relative images
@@ -91,6 +91,7 @@ require("mdlive").setup({
   follow_theme = true,  -- use the Neovim colorscheme in the preview
 })
 ```
+  code_line_numbers = true, -- line numbers on code blocks with more than one line
 
 ## How it works
 

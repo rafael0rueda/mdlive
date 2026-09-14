@@ -234,6 +234,30 @@ body {
   margin: 0;
 }
 
+.markdown-body pre.numbered {
+  display: flex;
+  padding-left: 0;
+}
+
+.markdown-body pre.numbered > code {
+  flex: 1 0 auto;
+}
+
+/* Stays in view when a long line scrolls the block sideways. */
+.markdown-body .line-numbers {
+  position: sticky;
+  left: 0;
+  flex: none;
+  margin-right: 16px;
+  padding: 0 12px 0 16px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  text-align: right;
+  white-space: pre;
+  user-select: none;
+}
+
 .markdown-body .copy-code {
   position: absolute;
   top: 8px;
@@ -412,9 +436,16 @@ body {
 }
 
 @media print {
+  /* Long lines wrap on paper, which would put the line numbers out of line. */
   #status,
-  .copy-code {
+  .copy-code,
+  .line-numbers {
     display: none !important;
+  }
+
+  .markdown-body pre.numbered {
+    display: block;
+    padding-left: 16px;
   }
 
   .markdown-body {

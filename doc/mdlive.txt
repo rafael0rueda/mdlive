@@ -88,6 +88,7 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
       follow = true,
       scroll_sync = true,
       follow_theme = true,
+      code_line_numbers = true,
     })
 <
 host                                                      *mdlive-config-host*
@@ -130,6 +131,12 @@ follow_theme                                      *mdlive-config-follow_theme*
     Type: `boolean`, default: `true`
     Use the colors of the current colorscheme in the preview. When `false`,
     the preview uses a light or dark theme based on the browser settings.
+
+code_line_numbers                            *mdlive-config-code_line_numbers*
+    Type: `boolean`, default: `true`
+    Show line numbers on code blocks with more than one line. They are left
+    out when copying the code and when printing. Double-click a number to
+    move the cursor to that line.
 
 ==============================================================================
 6. LUA API                                                        *mdlive-api*
@@ -187,8 +194,9 @@ Theme                                                           *mdlive-theme*
 Markdown                                                     *mdlive-markdown*
     CommonMark with tables, strikethrough, task lists, heading anchors,
     footnotes and `:emoji:` shortcodes. Code blocks are highlighted and have
-    a copy button, `$inline$` and `$$block$$` math is rendered with KaTeX,
-    and ```mermaid code blocks are drawn as diagrams.
+    line numbers (see |mdlive-config-code_line_numbers|) and a copy button,
+    `$inline$` and `$$block$$` math is rendered with KaTeX, and ```mermaid
+    code blocks are drawn as diagrams.
 
 GitHub alerts                                                  *mdlive-alerts*
     A blockquote starting with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,

@@ -32,6 +32,7 @@ local option_types = {
   follow = "boolean",
   scroll_sync = "boolean",
   follow_theme = "boolean",
+  code_line_numbers = "boolean",
 }
 
 local function check_installation()

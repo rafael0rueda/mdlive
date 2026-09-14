@@ -20,6 +20,8 @@ M.defaults = {
   scroll_sync = true,
   -- Use the colors of the current Neovim colorscheme in the preview.
   follow_theme = true,
+  -- Show line numbers on code blocks with more than one line.
+  code_line_numbers = true,
 }
 
 M.options = vim.deepcopy(M.defaults)

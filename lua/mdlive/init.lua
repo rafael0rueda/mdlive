@@ -75,6 +75,11 @@ local function send_theme(bufnr)
   end
 end
 
+-- Options the page renders with.
+local function send_settings(bufnr)
+  server.broadcast(bufnr, "settings", { code_line_numbers = config.options.code_line_numbers })
+end
+
 local function send_exports(bufnr)
   for id, job in pairs(exports) do
     if job.bufnr == bufnr and not job.sent then
@@ -278,6 +283,7 @@ local function start_server()
     export = receive_export,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
+      send_settings(bufnr)
       send_content(bufnr, true)
       send_view(bufnr)
       send_exports(bufnr)

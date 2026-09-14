@@ -115,6 +115,12 @@ local ok, err = xpcall(function()
   check("MdLive opens a tab again once it is closed", opened ~= nil)
 
   check("stream sends theme", events:find("event: theme", 1, true))
+  check(
+    "stream sends settings before content",
+    (events:find('event: settings\ndata: {"code_line_numbers":true}', 1, true) or math.huge)
+      < (events:find("event: content", 1, true) or 0),
+    events:match("event: settings\ndata: [^\n]*")
+  )
   check("stream sends initial content", events:find("# mdlive demo", 1, true))
   check("stream sends edited content", events:find("# Edited live", 1, true))
   check("stream sends cursor", events:find('"line":2', 1, true), events:match("event: cursor\ndata: [^\n]*"))
