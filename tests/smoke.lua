@@ -119,6 +119,28 @@ local ok, err = xpcall(function()
   check("blocks symlinked directory pointing outside", get(notes_files .. "/secrets/key.txt") == 404)
   check("blocks symlinked file pointing outside", get(notes_files .. "/key.txt") == 404)
   check("serves symlink pointing inside", get(notes_files .. "/alias.svg") == 200)
+
+  -- Files are streamed in chunks, and Range requests get part of them.
+  local big = ("0123456789abcdef"):rep(384 * 1024) -- 6 MiB
+  local big_file = assert(io.open(notes .. "/big.txt", "wb"))
+  big_file:write(big)
+  big_file:close()
+  code, body = get(notes_files .. "/big.txt")
+  check("streams a large file whole", code == 200 and body == big, { code, #body })
+  local _, range_headers = get(notes_files .. "/big.txt", { "-H", "Range: bytes=10-19", "-o", "/dev/null", "-D", "-" })
+  code, body = get(notes_files .. "/big.txt", { "-H", "Range: bytes=10-19" })
+  check(
+    "answers a range request",
+    code == 206
+      and body == big:sub(11, 20)
+      and range_headers:lower():find("content-range: bytes 10-19/" .. #big, 1, true),
+    range_headers
+  )
+  code, body = get(notes_files .. "/big.txt", { "-H", "Range: bytes=-5" })
+  check("answers a suffix range request", code == 206 and body == big:sub(-5), body)
+  check("rejects a range past the end", get(notes_files .. "/big.txt", { "-H", "Range: bytes=99999999-" }) == 416)
+  vim.fn.mkdir(notes .. "/sub", "p")
+  check("serves no directories", get(notes_files .. "/sub") == 404)
   check("unknown buffer events 404", get(session .. "/events/99999") == 404)
   -- Back to the demo buffer's preview.
   vim.cmd("MdLive")

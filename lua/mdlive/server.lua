@@ -88,13 +88,9 @@ local function query_param(target, name)
   return value and url_decode(value)
 end
 
-local function respond(sock, status, headers, body)
-  if sock:is_closing() then
-    return
-  end
-  body = body or ""
+-- Status line and headers of a response.
+local function head(status, headers)
   local lines = { "HTTP/1.1 " .. status }
-  headers["Content-Length"] = #body
   headers["Connection"] = "close"
   headers["X-Content-Type-Options"] = "nosniff"
   headers["Referrer-Policy"] = "no-referrer"
@@ -103,7 +99,16 @@ local function respond(sock, status, headers, body)
   for k, v in pairs(headers) do
     lines[#lines + 1] = k .. ": " .. v
   end
-  sock:write(table.concat(lines, "\r\n") .. "\r\n\r\n" .. body, function()
+  return table.concat(lines, "\r\n") .. "\r\n\r\n"
+end
+
+local function respond(sock, status, headers, body)
+  if sock:is_closing() then
+    return
+  end
+  body = body or ""
+  headers["Content-Length"] = #body
+  sock:write(head(status, headers) .. body, function()
     close(sock)
   end)
 end
@@ -151,20 +156,86 @@ local function resolve(dir, rel, roots)
   end
 end
 
-local function serve_file(sock, path, headers)
-  local f = path and io.open(path, "rb")
-  local body = f and f:read("*a")
-  if f then
-    f:close()
+-- The 0-based first and last byte a Range header asks for. Returns nothing for
+-- the whole file (no header, or several ranges) and false for a range outside it.
+local function byte_range(value, size)
+  local first, last = (value or ""):match("^bytes=(%d*)-(%d*)$")
+  if not first or (first == "" and last == "") then
+    return nil
   end
-  if not body then
+  if first == "" then
+    -- bytes=-N: the last N bytes.
+    local count = tonumber(last)
+    if count == 0 then
+      return false
+    end
+    first, last = math.max(0, size - count), size - 1
+  else
+    first, last = tonumber(first), math.min(tonumber(last) or size - 1, size - 1)
+  end
+  if first > last then
+    return false
+  end
+  return first, last
+end
+
+local chunk_size = 256 * 1024
+
+-- Streams a file in chunks, waiting for each to be sent, so large media neither
+-- blocks Neovim nor has to fit in memory. Range requests let videos seek.
+local function serve_file(sock, path, headers, range)
+  if not path then
     return text(sock, "404 Not Found", "Not found")
   end
-  local ext = (path:match("%.(%w+)$") or ""):lower()
   headers = headers or {}
-  headers["Content-Type"] = mime[ext] or "application/octet-stream"
-  headers["Cache-Control"] = "no-cache"
-  respond(sock, "200 OK", headers, body)
+  uv.fs_open(path, "r", 438, function(_, fd)
+    if not fd then
+      return text(sock, "404 Not Found", "Not found")
+    end
+    uv.fs_fstat(fd, function(_, stat)
+      if not stat or stat.type ~= "file" or sock:is_closing() then
+        uv.fs_close(fd)
+        return text(sock, "404 Not Found", "Not found")
+      end
+
+      local status = "200 OK"
+      local first, last = byte_range(range, stat.size)
+      if first == false then
+        uv.fs_close(fd)
+        return respond(sock, "416 Range Not Satisfiable", { ["Content-Range"] = "bytes */" .. stat.size })
+      elseif first then
+        status = "206 Partial Content"
+        headers["Content-Range"] = ("bytes %d-%d/%d"):format(first, last, stat.size)
+      else
+        first, last = 0, stat.size - 1
+      end
+      local ext = (path:match("%.(%w+)$") or ""):lower()
+      headers["Content-Type"] = mime[ext] or "application/octet-stream"
+      headers["Cache-Control"] = "no-cache"
+      headers["Accept-Ranges"] = "bytes"
+      headers["Content-Length"] = ("%d"):format(last - first + 1)
+
+      local offset = first
+      local function finish()
+        uv.fs_close(fd)
+        close(sock)
+      end
+      local function send_next(write_err)
+        if write_err or offset > last or sock:is_closing() then
+          return finish()
+        end
+        uv.fs_read(fd, math.min(chunk_size, last - offset + 1), offset, function(read_err, data)
+          -- Also stops when the file got shorter while being sent.
+          if read_err or not data or data == "" or sock:is_closing() then
+            return finish()
+          end
+          offset = offset + #data
+          sock:write(data, send_next)
+        end)
+      end
+      sock:write(head(status, headers), send_next)
+    end)
+  end)
 end
 
 local function frame(event, data)
@@ -245,7 +316,7 @@ local function handle(sock, request)
   -- The bundled page scripts and styles hold nothing private.
   local asset = path:match("^/app/(.+)$")
   if asset and method == "GET" then
-    return serve_file(sock, resolve(app_dir, asset, { app_dir }))
+    return serve_file(sock, resolve(app_dir, asset, { app_dir }), nil, headers.range)
   end
 
   local token, rest = path:match("^/(%x+)(/.*)$")
@@ -262,7 +333,8 @@ local function handle(sock, request)
   end
 
   if path:match("^/preview/%d+/?$") then
-    return serve_file(sock, vim.fs.joinpath(app_dir, "index.html"), { ["Content-Security-Policy"] = page_policy })
+    local page = vim.fs.joinpath(app_dir, "index.html")
+    return serve_file(sock, page, { ["Content-Security-Policy"] = page_policy }, headers.range)
   end
 
   local bufnr = tonumber(path:match("^/events/(%d+)$"))
@@ -281,7 +353,7 @@ local function handle(sock, request)
     local full = dir and resolve(dir, file, { dir, vim.fn.getcwd() })
     -- PDFs cannot script this origin, and browsers refuse to show them sandboxed.
     local is_pdf = full and full:lower():match("%.pdf$")
-    return serve_file(sock, full, { ["Content-Security-Policy"] = not is_pdf and file_policy or nil })
+    return serve_file(sock, full, { ["Content-Security-Policy"] = not is_pdf and file_policy or nil }, headers.range)
   end
 
   text(sock, "404 Not Found", "Not found")
