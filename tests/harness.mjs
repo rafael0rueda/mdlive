@@ -40,6 +40,8 @@ export async function startNeovim({ dir, file, commands = [] }) {
   for (const command of commands) args.push("-c", command);
   args.push("-c", `edit ${file}`, "-c", "MdLive");
   const proc = spawn("nvim", args, { stdio: "ignore" });
+  let startError = null;
+  proc.on("error", (err) => (startError = err));
 
   const nvim = {
     expr: async (expression) => (await exec("nvim", ["--server", socket, "--remote-expr", expression])).stdout,
@@ -52,10 +54,12 @@ export async function startNeovim({ dir, file, commands = [] }) {
     kill: (signal = "SIGTERM") => proc.kill(signal),
   };
 
-  const url = await waitFor(async () => existsSync(socket) && (await nvim.expr("get(g:, 'mdlive_url', '')")).trim());
-  if (!url) {
+  const url = await waitFor(
+    async () => startError || (existsSync(socket) && (await nvim.expr("get(g:, 'mdlive_url', '')")).trim()),
+  );
+  if (!url || startError) {
     proc.kill("SIGKILL");
-    throw new Error("Neovim did not start the preview");
+    throw new Error(startError ? `Could not start Neovim: ${startError.message}` : "Neovim did not start the preview");
   }
   nvim.url = url;
   return nvim;
@@ -128,11 +132,17 @@ export async function startChrome({ dir, width = 1200, height = 800 }) {
       }
     });
     proc.on("exit", (code) => reject(new Error(`Chrome exited with ${code}: ${output}`)));
+    proc.on("error", (err) => reject(new Error(`Could not start Chrome: ${err.message}`)));
   });
 
   const { port } = new URL(endpoint);
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const cdp = await connect(targets.find((target) => target.type === "page").webSocketDebuggerUrl);
+  // The first page can join the target list a moment after DevTools starts listening.
+  const target = await waitFor(async () => {
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    return targets.find((t) => t.type === "page");
+  });
+  if (!target) throw new Error("Chrome has no page to drive");
+  const cdp = await connect(target.webSocketDebuggerUrl);
 
   const page = {
     send: cdp.send,

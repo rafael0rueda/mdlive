@@ -9,12 +9,21 @@ import { sleep, startChrome, startNeovim, tempDir, waitFor } from "./harness.mjs
 const dir = tempDir();
 let failures = 0;
 
+// On GitHub Actions a failure also becomes an annotation, shown on the run page.
+function report(message) {
+  console.log(message);
+  if (process.env.GITHUB_ACTIONS) {
+    const text = message.slice(0, 4000).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+    console.log(`::error title=Browser tests::${text}`);
+  }
+}
+
 function check(name, ok, detail) {
   if (ok) {
     console.log(`ok   ${name}`);
   } else {
     failures++;
-    console.log(`FAIL ${name}${detail === undefined ? "" : ` -> ${JSON.stringify(detail)}`}`);
+    report(`FAIL ${name}${detail === undefined ? "" : ` -> ${JSON.stringify(detail)}`}`);
   }
 }
 
@@ -178,7 +187,7 @@ try {
   check("the tab stops reconnecting when Neovim is gone", status, status);
 } catch (err) {
   failures++;
-  console.log(`ERROR ${err.stack}`);
+  report(`ERROR ${err.stack}`);
 } finally {
   await page?.close();
   nvim?.kill("SIGKILL");
