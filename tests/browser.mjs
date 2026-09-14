@@ -43,6 +43,8 @@ try {
   nvim = await startNeovim({ dir, file: "examples/demo.md" });
   page = await startChrome({ dir });
   await page.goto(nvim.url);
+  const [, token, , bufnr] = new URL(nvim.url).pathname.split("/");
+  const files = `/${token}/files/${bufnr}/`;
 
   // Rendering ----------------------------------------------------------------
 
@@ -74,6 +76,7 @@ try {
     "", '<img alt="probe" src="x" onerror="window.__xss = 1">',
     "", "<script>window.__xss = 2</script>",
     "", '<a href="javascript:window.__xss = 3">probe link</a>',
+    "", '<a href="https://example.com/" data-open-path="docs/guide.md" data-open-hash="#install">probe web link</a>',
   })`);
   const probed = await waitFor(() => page.eval(`!!document.querySelector('img[alt="probe"]')`));
   await sleep(300);
@@ -82,10 +85,12 @@ try {
     handlers: document.querySelectorAll("#content [onerror]").length,
     scripts: document.querySelectorAll("#content script").length,
     href: Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "probe link")?.getAttribute("href") ?? null,
+    posing: Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "probe web link")?.hasAttribute("data-open-path") ?? null,
   })`);
   check("renders raw HTML from the buffer", probed);
   check("scripts and event handlers in the buffer do not run", xss.ran === null && !xss.handlers && !xss.scripts, xss);
   check("javascript: links are removed", !xss.href?.startsWith("javascript:"), xss.href);
+  check("a web link cannot pose as a link that opens a file in Neovim", xss.posing === false, xss);
   await nvim.lua(`vim.api.nvim_buf_set_lines(0, ${lineCount}, -1, false, {})`);
   await waitFor(() => page.eval(`!document.querySelector('img[alt="probe"]')`));
 
@@ -175,6 +180,35 @@ try {
   })()`);
   check("the copy button copies the code without line numbers", copied?.startsWith("local function greet(name)"), copied);
 
+  // Links and media ----------------------------------------------------------
+
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, {
+    "", '<picture><source srcset="assets/logo.svg 1x, https://example.com/big.png 2x"><img alt="picture probe" src="missing.png"></picture>',
+    "", '<video poster="assets/logo.svg" src="clip.mp4"></video>',
+    "", "[manual probe](assets/manual.pdf#page=3)",
+  })`);
+  // The <img> itself points to a missing file: it only loads through the rewritten srcset.
+  const media = await waitFor(() =>
+    page.eval(`(() => {
+      if (!(document.querySelector('img[alt="picture probe"]')?.naturalWidth > 0)) return null;
+      const video = document.querySelector("#content video");
+      return {
+        srcset: document.querySelector("#content picture source").getAttribute("srcset"),
+        poster: video.getAttribute("poster"),
+        src: video.getAttribute("src"),
+        manual: Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "manual probe")?.getAttribute("href"),
+      };
+    })()`),
+  );
+  check(
+    "relative srcset, poster and media URLs load through the token URL",
+    media?.srcset === `${files}assets/logo.svg 1x, https://example.com/big.png 2x` &&
+      media.poster === `${files}assets/logo.svg` &&
+      media.src === `${files}clip.mp4`,
+    media,
+  );
+  check("links to local files keep their fragment", media?.manual === `${files}assets/manual.pdf#page=3`, media);
+
   // Export -------------------------------------------------------------------
 
   const exportPath = join(dir, "demo.html");
@@ -185,8 +219,35 @@ try {
     html && html.includes('class="katex"') && html.includes("<svg") && !html.includes("data-line") && !html.includes("<script"),
     html ? html.slice(0, 120) : html,
   );
-  const token = new URL(nvim.url).pathname.split("/")[1];
   check("the exported page does not contain the server token", html && !html.includes(token));
+  check("the exported page has a policy that blocks scripts", html?.includes(`http-equiv="Content-Security-Policy"`));
+  check(
+    "the exported page resolves relative srcset URLs",
+    html && /srcset="[^"]*assets\/logo\.svg 1x, https:\/\/example\.com\/big\.png 2x"/.test(html) && !html.includes("/files/"),
+    html?.match(/srcset="[^"]*"/)?.[0],
+  );
+
+  // Status messages ----------------------------------------------------------
+
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, { "", "[missing probe](missing.md)" })`);
+  await waitFor(() =>
+    page.eval(`Array.from(document.querySelectorAll("#content a")).some((a) => a.textContent === "missing probe")`),
+  );
+  const flashed = await page.eval(`(async () => {
+    const status = document.getElementById("status");
+    window.__statuses = [];
+    new MutationObserver(() => window.__statuses.push(status.hidden ? null : status.textContent))
+      .observe(status, { attributes: true, childList: true, characterData: true, subtree: true });
+    // The server answers some errors in plain text, such as a rejected Host header.
+    const realFetch = window.fetch;
+    window.fetch = async () => new Response("Forbidden", { status: 403 });
+    Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "missing probe").click();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    window.fetch = realFetch;
+    return status.textContent;
+  })()`);
+  const flashedAt = Date.now();
+  check("a plain-text error from the server is shown", flashed === "Could not open missing.md: Forbidden", flashed);
 
   // Neovim goes away without closing the preview -----------------------------
 
@@ -199,6 +260,10 @@ try {
     { timeout: 30000, interval: 500 },
   );
   check("the tab stops reconnecting when Neovim is gone", status, status);
+  // The error shown above disappears after 4 s, but must not hide the statuses that replaced it.
+  await sleep(Math.max(0, 4500 - (Date.now() - flashedAt)));
+  const statuses = await page.eval("window.__statuses");
+  check("a message shown for a few seconds does not hide later ones", !statuses.includes(null), statuses);
 } catch (err) {
   failures++;
   report(`ERROR ${err.stack}`);

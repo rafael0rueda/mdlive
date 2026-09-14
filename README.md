@@ -118,6 +118,8 @@ for example a README in a repository you just cloned:
 
 - HTML is sanitized with DOMPurify, and a Content-Security-Policy only allows
   the plugin's own scripts, so embedded scripts and event handlers never run.
+  Attributes the page uses for its own features are removed from that HTML,
+  so a web link cannot pose as a link that opens a file in Neovim.
 - Images and linked files are served only from the Markdown file's directory
   and the current working directory, with a `sandbox` policy so an `.html` or
   `.svg` file cannot run scripts either. Symlinks are resolved before that
@@ -130,6 +132,8 @@ for example a README in a repository you just cloned:
   `Host` header. Requests that act in Neovim (opening a linked file, moving
   the cursor, saving an export) need a same-origin request with a custom
   header, so other websites cannot trigger them.
+- Exported HTML files include a Content-Security-Policy that blocks scripts
+  wherever they are opened.
 
 ## Tests
 

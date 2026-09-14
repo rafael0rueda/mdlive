@@ -28,14 +28,19 @@
     return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
 
+  // A message shown for a few seconds; any status set after it cancels its timer.
+  let statusTimer = null;
+
   function setStatus(message) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
     statusEl.hidden = !message;
     statusEl.textContent = message || "";
   }
 
   function flashStatus(message) {
     setStatus(message);
-    setTimeout(() => setStatus(null), 4000);
+    statusTimer = setTimeout(() => setStatus(null), 4000);
   }
 
   // A small cache: every edit renders the whole document again, but most code
@@ -156,6 +161,18 @@
     }
   }
 
+  // srcset is a list of "url [descriptor]" separated by commas. A URL can contain
+  // commas itself (data: URLs); only commas right after it separate candidates.
+  const srcsetCandidate = /([\s,]*)([^\s,](?:\S*[^\s,])?)(,+|(?:[^,(]|\([^)]*\))*)/g;
+
+  function mapSrcset(value, map) {
+    return value.replace(srcsetCandidate, (_, lead, url, rest) => lead + map(url) + rest);
+  }
+
+  // Set by postProcess(), which trusts them. The same attributes in the markdown's
+  // HTML are dropped: a web link must not pose as a link that opens a file in Neovim.
+  const scriptAttributes = ["data-src", "data-tex", "data-display", "data-open-path", "data-open-hash"];
+
   // Runs after sanitizing, so everything added here comes from this script.
   function postProcess(fragment, env) {
     for (const block of fragment.querySelectorAll(".mermaid-block[data-mermaid]")) {
@@ -171,10 +188,16 @@
       if (source.display) el.dataset.display = "";
     }
 
-    // Relative images are served from the markdown file's directory.
-    for (const img of fragment.querySelectorAll("img[src]")) {
-      const src = img.getAttribute("src");
-      if (isRelative(src)) img.setAttribute("src", `${session}/files/${bufnr}/${src}`);
+    // Relative images and media (<img>, <picture> sources, <video>, <audio>) are
+    // served from the markdown file's directory.
+    const fileUrl = (url) => (url && isRelative(url) ? `${session}/files/${bufnr}/${url}` : url);
+    for (const el of fragment.querySelectorAll("[src], [poster]")) {
+      for (const name of ["src", "poster"]) {
+        if (el.hasAttribute(name)) el.setAttribute(name, fileUrl(el.getAttribute(name)));
+      }
+    }
+    for (const el of fragment.querySelectorAll("[srcset]")) {
+      el.setAttribute("srcset", mapSrcset(el.getAttribute("srcset"), fileUrl));
     }
 
     for (const link of fragment.querySelectorAll("a[href]")) {
@@ -187,8 +210,9 @@
 
       const [, path, hash = ""] = /^([^?#]*)(?:\?[^#]*)?(#.*)?$/.exec(href);
       if (!path) continue;
-      // Local files are served raw; markdown files are opened in Neovim on click.
-      link.setAttribute("href", `${session}/files/${bufnr}/${path}`);
+      // Local files are served raw (keeping fragments like #page=3 for PDFs);
+      // markdown files are opened in Neovim on click.
+      link.setAttribute("href", `${session}/files/${bufnr}/${path}${hash}`);
       if (isMarkdown(path)) {
         link.dataset.openPath = safeDecode(path);
         link.dataset.openHash = hash;
@@ -428,7 +452,10 @@
     mathSources = [];
     const { frontMatter, body } = splitFrontMatter(text);
     const html = (frontMatter ? frontMatterHtml(frontMatter) : "") + md.render(body, env);
-    template.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ["semantics", "annotation"] });
+    template.innerHTML = DOMPurify.sanitize(html, {
+      ADD_TAGS: ["semantics", "annotation"],
+      FORBID_ATTR: scriptAttributes,
+    });
     postProcess(template.content, env);
     patchBlocks(contentEl, template.content);
     renderMath();
@@ -623,6 +650,8 @@
     "data-open-hash",
   ];
 
+  const exportPolicy = "script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+
   async function fetchOk(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${url}: ${response.status}`);
@@ -654,11 +683,15 @@
     const page = contentEl.cloneNode(true);
     // Rewriting these also keeps the token out of the exported file.
     const prefix = `${session}/files/${bufnr}/`;
-    for (const el of page.querySelectorAll("[src], [href]")) {
-      for (const name of ["src", "href"]) {
+    const local = (url) => (url.startsWith(prefix) ? base + url.slice(prefix.length) : url);
+    for (const el of page.querySelectorAll("[src], [href], [poster]")) {
+      for (const name of ["src", "href", "poster"]) {
         const value = el.getAttribute(name);
-        if (value && value.startsWith(prefix)) el.setAttribute(name, base + value.slice(prefix.length));
+        if (value) el.setAttribute(name, local(value));
       }
+    }
+    for (const el of page.querySelectorAll("[srcset]")) {
+      el.setAttribute("srcset", mapSrcset(el.getAttribute("srcset"), local));
     }
     page.querySelectorAll(".copy-code").forEach((button) => button.remove());
     for (const el of page.querySelectorAll(liveAttributes.map((name) => `[${name}]`).join(","))) {
@@ -678,6 +711,8 @@
       `<html lang="en" data-theme="${mode}" style="${escape(root.style.cssText)}">`,
       "<head>",
       '<meta charset="utf-8" />',
+      // The content was sanitized already; this also blocks scripts wherever the file is opened.
+      `<meta http-equiv="Content-Security-Policy" content="${exportPolicy}" />`,
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
       '<meta name="generator" content="mdlive" />',
       `<title>${escape(title)}</title>`,
@@ -715,12 +750,20 @@
 
   // ------------------------------------------------------------------ events
 
-  function post(path) {
-    return fetch(session + path, { method: "POST", headers: { "X-MdLive": "1" } }).then(async (response) => {
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      return data;
-    });
+  // Actions answer JSON, but other errors (a rejected Host header, a server
+  // error) are plain text.
+  async function post(path) {
+    const response = await fetch(session + path, { method: "POST", headers: { "X-MdLive": "1" } });
+    const body = await response.text();
+    let data = null;
+    try {
+      data = JSON.parse(body);
+    } catch (_) {
+      // Not JSON: the body is the error message.
+    }
+    if (!response.ok) throw new Error(data?.error || body.trim() || `HTTP ${response.status}`);
+    if (!data) throw new Error("unexpected response");
+    return data;
   }
 
   let navigating = false;

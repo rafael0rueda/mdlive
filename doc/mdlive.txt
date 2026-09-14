@@ -213,10 +213,12 @@ Front matter                                             *mdlive-front-matter*
     as a collapsed block.
 
 Links and images                                                *mdlive-links*
-    Relative images are loaded from the directory of the Markdown file.
-    Clicking a relative link to a Markdown file opens that file in Neovim and
-    the tab shows its preview. Links to other local files open the raw file
-    in a new tab, and web links open in a new tab.
+    Relative images, including `<picture>` sources and `<video>` or `<audio>`
+    files, are loaded from the directory of the Markdown file. Clicking a
+    relative link to a Markdown file opens that file in Neovim and the tab
+    shows its preview. Links to other local files open the raw file in a new
+    tab, keeping a fragment such as `#page=3` for PDFs, and web links open in
+    a new tab.
 
 Export                                                         *mdlive-export*
     |:MdLiveExport| saves the page as it looks in the preview, theme colors
@@ -232,7 +234,9 @@ Markdown can contain raw HTML, for example in a README of a repository you
 just cloned, so the preview treats it as untrusted:
 
 - The HTML is sanitized with DOMPurify, and a Content-Security-Policy only
-  allows the plugin's own scripts, so embedded scripts never run.
+  allows the plugin's own scripts, so embedded scripts never run. Attributes
+  the page uses for its own features are removed from it, so a web link
+  cannot pose as a link that opens a file in Neovim.
 - Files are served only from the directory of the Markdown file and the
   current working directory, in a sandbox that blocks scripts. Symlinks are
   resolved first, so a link cannot point outside those directories.
@@ -243,6 +247,8 @@ just cloned, so the preview treats it as untrusted:
 - The server rejects requests with a non-local Host header. Requests that act
   in Neovim (opening a linked file, moving the cursor, saving an export) must
   come from the preview page itself, so other websites cannot send them.
+- Exported HTML files include a Content-Security-Policy that blocks scripts
+  wherever they are opened.
 
 ==============================================================================
 9. HEALTH CHECK                                                *mdlive-health*
