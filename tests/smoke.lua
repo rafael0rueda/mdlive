@@ -228,9 +228,7 @@ local ok, err = xpcall(function()
   local warning = table.concat(warnings, "\n")
   check(
     "setup() warns about wrong options and uses their defaults",
-    warning:find("`port`", 1, true)
-      and warning:find("`colour`", 1, true)
-      and require("mdlive.config").options.port == 0,
+    warning:find("`port`", 1, true) and warning:find("`colour`", 1, true) and require("mdlive.config").options.port == 0,
     warning
   )
   setup()
