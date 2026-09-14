@@ -5,6 +5,8 @@
 Live browser preview of Markdown buffers. The preview updates while you type,
 follows your cursor and uses the colors of your Neovim colorscheme.
 
+![examples/demo.md in Neovim, next to its live preview in the browser](docs/screenshot.png)
+
 - Pure Lua: the HTTP server runs inside Neovim (`vim.uv`), nothing to install
 - Updates while typing (debounced), pushed with Server-Sent Events
 - One tab follows you: switching to another markdown buffer switches the preview
@@ -89,9 +91,9 @@ require("mdlive").setup({
   follow = true,        -- one tab switches to the markdown buffer you are in
   scroll_sync = true,   -- scroll the preview with the cursor
   follow_theme = true,  -- use the Neovim colorscheme in the preview
+  code_line_numbers = true, -- line numbers on code blocks with more than one line
 })
 ```
-  code_line_numbers = true, -- line numbers on code blocks with more than one line
 
 ## How it works
 
@@ -129,11 +131,19 @@ for example a README in a repository you just cloned:
 
 ```sh
 nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
+node tests/browser.mjs
 stylua --check lua plugin tests
 ```
 
-CI runs both on Neovim 0.11, stable and nightly, and checks that the help
-tags in `doc/` build without errors.
+`tests/smoke.lua` checks the Neovim side: the server, its security checks and
+what it sends. `tests/browser.mjs` opens the preview in headless Chrome against
+a real Neovim and checks the page: rendering, sanitizing, in-place updates,
+scroll sync, jumping to the source, export and reconnecting. It needs Node 22+
+and Chrome or Chromium (set `CHROME=/path/to/chrome` if it is not on `PATH`),
+and no packages.
+
+CI runs the smoke test on Neovim 0.11, stable and nightly, the browser tests on
+stable, and checks that the help tags in `doc/` build without errors.
 
 ## License
 

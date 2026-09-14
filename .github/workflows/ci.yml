@@ -29,6 +29,26 @@ jobs:
       - name: Help tags
         run: nvim --headless --clean -c "try | helptags doc | catch | echo v:exception | cquit | endtry" -c "qa!"
 
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # The runner image comes with Google Chrome.
+      - name: Browser tests
+        run: node tests/browser.mjs
+
   style:
     name: Stylua
     runs-on: ubuntu-latest
