@@ -175,9 +175,15 @@ export async function startChrome({ dir, width = 1200, height = 800 }) {
       const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
       writeFileSync(file, Buffer.from(data, "base64"));
     },
+    // Resolves once Chrome has exited, or after 5 seconds.
     close() {
       return new Promise((resolve) => {
-        proc.once("exit", resolve);
+        if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+        const timer = setTimeout(resolve, 5000);
+        proc.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
         cdp.socket.close();
         proc.kill();
       });

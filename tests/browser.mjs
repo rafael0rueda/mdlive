@@ -18,6 +18,16 @@ function report(message) {
   }
 }
 
+// Anything that escapes the checks below still ends up on the run page.
+process.on("uncaughtException", (err) => {
+  report(`ERROR ${err.stack}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (err) => {
+  report(`ERROR ${err?.stack ?? err}`);
+  process.exit(1);
+});
+
 function check(name, ok, detail) {
   if (ok) {
     console.log(`ok   ${name}`);
@@ -189,10 +199,18 @@ try {
   failures++;
   report(`ERROR ${err.stack}`);
 } finally {
-  await page?.close();
-  nvim?.kill("SIGKILL");
-  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  // Cleaning up (a browser still writing to its profile folder) must not fail the tests.
+  try {
+    await page?.close();
+    nvim?.kill("SIGKILL");
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (err) {
+    console.log(`warning: cleanup failed: ${err.message}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Browser tests::cleanup failed: ${err.message}`);
+  }
 }
 
-console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);
+const summary = failures === 0 ? "all checks passed" : `${failures} check(s) failed`;
+console.log(`\n${summary}`);
+if (process.env.GITHUB_ACTIONS) console.log(`::notice title=Browser tests::${summary}`);
 process.exit(failures === 0 ? 0 : 1);
