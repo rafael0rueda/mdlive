@@ -6,7 +6,7 @@ local M = {}
 
 local previews = {} -- [bufnr] = { group = augroup id, timer = uv timer, tick = changedtick last sent }
 local active = nil -- follow mode: the buffer the preview tabs are showing
-local exports = {} -- [id] = { bufnr, path, base, sent }
+local exports = {} -- [id] = { bufnr, path, base, sent, callback }
 local export_id = 0
 local export_timeout = 20000
 local api = vim.api
@@ -19,8 +19,7 @@ local function supported()
   if vim.fn.has("nvim-0.11") == 1 then
     return true
   end
-  notify("requires Neovim 0.11 or newer (see :checkhealth mdlive)", vim.log.levels.ERROR)
-  return false
+  return nil, "requires Neovim 0.11 or newer (see :checkhealth mdlive)"
 end
 
 local function resolve_buf(bufnr)
@@ -156,7 +155,7 @@ local function attach(bufnr)
     buffer = bufnr,
     callback = function()
       vim.schedule(function()
-        M.close(bufnr)
+        M.enable(false, { buf = bufnr })
       end)
     end,
   })
@@ -218,15 +217,30 @@ local function jump(bufnr, line)
   return true
 end
 
+-- Ends a pending export: shows the outcome and hands it to the caller's callback.
+local function finish_export(id, err)
+  local job = exports[id]
+  exports[id] = nil
+  if err then
+    notify(err, vim.log.levels.ERROR)
+  else
+    notify("exported to " .. vim.fn.fnamemodify(job.path, ":~:."))
+  end
+  if job.callback then
+    vim.schedule(function()
+      job.callback(err, job.path)
+    end)
+  end
+end
+
 -- The browser sends back the rendered page of a pending export.
 local function receive_export(id, html, err)
   local job = id and exports[id]
   if not job then
     return nil, "no export is waiting for this page"
   end
-  exports[id] = nil
   if err or html == "" then
-    notify("export failed: " .. (err or "the preview sent an empty page"), vim.log.levels.ERROR)
+    finish_export(id, "export failed: " .. (err or "the preview sent an empty page"))
     return true
   end
   local file, err = io.open(job.path, "wb")
@@ -238,10 +252,10 @@ local function receive_export(id, html, err)
     ok, err = written and closed, write_err or close_err
   end
   if not ok then
-    notify("could not write " .. job.path .. ": " .. tostring(err), vim.log.levels.ERROR)
+    finish_export(id, "could not write " .. job.path .. ": " .. tostring(err))
     return nil, "could not write the file"
   end
-  notify("exported to " .. vim.fn.fnamemodify(job.path, ":~:."))
+  finish_export(id)
   return true
 end
 
@@ -295,9 +309,9 @@ local function start_server()
     end,
   })
   if not port then
-    notify("failed to start server: " .. tostring(err), vim.log.levels.ERROR)
+    return nil, "failed to start server: " .. tostring(err)
   end
-  return port ~= nil
+  return true
 end
 
 local function buf_label(bufnr)
@@ -356,19 +370,20 @@ local function follow(bufnr)
   end, 100)
 end
 
-function M.open(bufnr)
-  if not supported() then
-    return
+-- Starts the preview of a buffer: opens a browser tab, or switches the followed tab to it.
+local function start_preview(bufnr)
+  if not api.nvim_buf_is_valid(bufnr) then
+    return nil, "invalid buffer " .. bufnr
   end
-  bufnr = resolve_buf(bufnr)
-  if not start_server() then
-    return
+  local ok, err = start_server()
+  if not ok then
+    return nil, err
   end
   if config.options.follow and active and active ~= bufnr then
     if is_following() then
       follow(bufnr)
       notify("preview switched to " .. buf_label(bufnr))
-      return
+      return true
     end
     -- The followed buffer's tab was closed; a new tab takes over.
     detach(active)
@@ -380,18 +395,15 @@ function M.open(bufnr)
   local url = server.url(bufnr)
   if server.client_count(bufnr) > 0 then
     notify("preview already open at " .. url)
-    return
+    return true
   end
   open_browser(url)
   notify("previewing at " .. url)
+  return true
 end
 
-function M.close(bufnr)
-  -- From the commands (no buffer given), follow mode stops the followed preview from anywhere.
-  if bufnr == nil and config.options.follow and not previews[api.nvim_get_current_buf()] then
-    bufnr = active
-  end
-  bufnr = resolve_buf(bufnr)
+-- Stops the preview of a buffer and tells its tabs.
+local function stop_preview(bufnr)
   if not previews[bufnr] then
     return
   end
@@ -409,70 +421,121 @@ function M.close(bufnr)
   end, 100)
 end
 
-function M.toggle(bufnr)
-  bufnr = resolve_buf(bufnr)
-  if previews[bufnr] then
-    M.close(bufnr)
-  else
-    M.open(bufnr)
+--- Starts or stops previews. `filter.buf` selects a buffer, 0 for the current
+--- one. Without it, `enable(false)` stops every preview and `enable(true)`
+--- previews the current buffer. `enable` defaults to true. Returns true, or nil
+--- and a message on failure (the message is also shown).
+function M.enable(enable, filter)
+  local ok, err = supported()
+  if not ok then
+    notify(err, vim.log.levels.ERROR)
+    return nil, err
   end
+  vim.validate("enable", enable, "boolean", true)
+  vim.validate("filter", filter, "table", true)
+  local buf = filter and filter.buf
+  vim.validate("filter.buf", buf, "number", true)
+
+  if enable == false then
+    for _, bufnr in ipairs(buf and { resolve_buf(buf) } or vim.tbl_keys(previews)) do
+      stop_preview(bufnr)
+    end
+    return true
+  end
+  ok, err = start_preview(resolve_buf(buf))
+  if not ok then
+    notify(err, vim.log.levels.ERROR)
+  end
+  return ok, err
 end
 
-function M.is_open(bufnr)
-  return previews[resolve_buf(bufnr)] ~= nil
+--- Returns whether the buffer `filter.buf` (0 for the current one) is being
+--- previewed, or without it, whether any buffer is.
+function M.is_enabled(filter)
+  local buf = filter and filter.buf
+  if buf == nil then
+    return next(previews) ~= nil
+  end
+  return previews[resolve_buf(buf)] ~= nil
 end
 
 --- Writes the rendered preview of `bufnr` to a standalone HTML file. The page
 --- is rendered by the browser, so the preview is opened first if needed.
 --- `opts.path` defaults to the buffer's file with an .html extension, and
---- `opts.force` overwrites an existing file.
-function M.export(bufnr, opts)
-  if not supported() then
-    return
+--- `opts.force` overwrites an existing file. Returns true once the export is
+--- queued, or nil and a message (also shown). `callback(err, path)` is called
+--- once, when the file is written or the export fails.
+function M.export(bufnr, opts, callback)
+  local path
+  -- Every failure is shown and handed to the callback.
+  local function fail(err)
+    notify(err, vim.log.levels.ERROR)
+    if callback then
+      vim.schedule(function()
+        callback(err, path)
+      end)
+    end
+    return nil, err
   end
+
+  local ok, err = supported()
+  if not ok then
+    return fail(err)
+  end
+  vim.validate("opts", opts, "table", true)
+  vim.validate("callback", callback, "function", true)
   bufnr = resolve_buf(bufnr)
+  if not api.nvim_buf_is_valid(bufnr) then
+    return fail("invalid buffer " .. bufnr)
+  end
   opts = opts or {}
 
-  local path = opts.path
+  path = opts.path
   if not path or path == "" then
     local name = api.nvim_buf_get_name(bufnr)
     if name == "" then
-      return notify("the buffer has no name, give a file: :MdLiveExport {file}", vim.log.levels.ERROR)
+      return fail("the buffer has no name, give a file: :MdLiveExport {file}")
     end
     path = vim.fn.fnamemodify(name, ":r") .. ".html"
   end
   path = vim.fn.fnamemodify(vim.fs.normalize(path), ":p")
   local stat = vim.uv.fs_stat(path)
   if stat and stat.type == "directory" then
-    return notify(path .. " is a directory", vim.log.levels.ERROR)
+    return fail(path .. " is a directory")
   end
   if stat and not opts.force then
-    return notify(vim.fn.fnamemodify(path, ":~:.") .. " exists (add ! to overwrite)", vim.log.levels.ERROR)
+    return fail(vim.fn.fnamemodify(path, ":~:.") .. " exists (add ! to overwrite)")
   end
   if vim.fn.isdirectory(vim.fs.dirname(path)) == 0 then
-    return notify("directory " .. vim.fs.dirname(path) .. " does not exist", vim.log.levels.ERROR)
+    return fail("directory " .. vim.fs.dirname(path) .. " does not exist")
   end
 
   export_id = export_id + 1
   local id = export_id
-  -- Relative images and links in the page must still work from where the file is written.
-  exports[id] = { bufnr = bufnr, path = path, base = relative_url(vim.fs.dirname(path), buffer_dir(bufnr)) }
+  exports[id] = {
+    bufnr = bufnr,
+    path = path,
+    -- Relative images and links in the page must still work from where the file is written.
+    base = relative_url(vim.fs.dirname(path), buffer_dir(bufnr)),
+    callback = callback,
+  }
   vim.defer_fn(function()
     if exports[id] then
-      exports[id] = nil
-      notify("export timed out: no preview tab answered", vim.log.levels.ERROR)
+      finish_export(id, "export timed out: no preview tab answered")
     end
   end, export_timeout)
 
   if previews[bufnr] and server.client_count(bufnr) > 0 then
     send_exports(bufnr)
-  else
-    -- The export is sent once the tab connects.
-    M.open(bufnr)
-    if not server.is_running() then
-      exports[id] = nil
-    end
+    return true
   end
+  -- The export is sent once the tab connects.
+  ok, err = start_preview(bufnr)
+  if not ok then
+    exports[id] = nil
+    return fail(err)
+  end
+  return true
 end
 
 function M.setup(opts)
@@ -484,7 +547,7 @@ function M.setup(opts)
       pattern = config.options.filetypes,
       callback = function(ev)
         if not previews[ev.buf] and wants_preview(ev.buf) then
-          M.open(ev.buf)
+          M.enable(true, { buf = ev.buf })
         end
       end,
     })
@@ -496,6 +559,40 @@ function M.setup(opts)
       send_settings(bufnr)
     end
   end
+end
+
+-- Deprecated names, kept working until 1.0.
+local function deprecate(name, alternative)
+  vim.deprecate(name, alternative, "1.0", "mdlive", false)
+end
+
+--- Deprecated: use mdlive.enable().
+function M.open(bufnr)
+  deprecate("mdlive.open()", "mdlive.enable()")
+  M.enable(true, { buf = bufnr or 0 })
+end
+
+--- Deprecated: use mdlive.enable(false).
+function M.close(bufnr)
+  deprecate("mdlive.close()", "mdlive.enable(false)")
+  -- Without a buffer, follow mode stops the followed preview from anywhere.
+  if bufnr == nil and config.options.follow and not previews[api.nvim_get_current_buf()] then
+    bufnr = active
+  end
+  M.enable(false, { buf = bufnr or 0 })
+end
+
+--- Deprecated: use mdlive.enable(not mdlive.is_enabled()).
+function M.toggle(bufnr)
+  deprecate("mdlive.toggle()", "mdlive.enable(not mdlive.is_enabled())")
+  local filter = { buf = resolve_buf(bufnr) }
+  M.enable(not M.is_enabled(filter), filter)
+end
+
+--- Deprecated: use mdlive.is_enabled().
+function M.is_open(bufnr)
+  deprecate("mdlive.is_open()", "mdlive.is_enabled()")
+  return M.is_enabled({ buf = bufnr or 0 })
 end
 
 local global_group = api.nvim_create_augroup("MdLive", { clear = true })
