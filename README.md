@@ -74,6 +74,9 @@ Example mapping:
 vim.keymap.set("n", "<leader>mp", "<cmd>MdLiveToggle<cr>", { desc = "Markdown preview" })
 ```
 
+The same actions are available from Lua with `enable()`, `is_enabled()` and
+`export()`, see `:help mdlive-api`.
+
 Try it with `examples/demo.md`.
 
 ## Configuration
@@ -141,6 +144,8 @@ for example a README in a repository you just cloned:
 nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
 node tests/browser.mjs
 stylua --check lua plugin tests
+VIMRUNTIME="$(nvim --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)" \
+  lua-language-server --check . --checklevel=Warning --configpath .luarc.json
 ```
 
 `tests/smoke.lua` checks the Neovim side: the server, its security checks and
@@ -151,7 +156,8 @@ and Chrome or Chromium (set `CHROME=/path/to/chrome` if it is not on `PATH`),
 and no packages.
 
 CI runs the smoke test on Neovim 0.11, stable and nightly, the browser tests on
-stable, and checks that the help tags in `doc/` build without errors.
+stable, checks that the help tags in `doc/` build without errors and type checks
+the Lua code with lua-language-server, using the types in `$VIMRUNTIME`.
 
 ## License
 

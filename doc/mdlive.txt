@@ -50,25 +50,25 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
 4. COMMANDS                                                  *mdlive-commands*
 
 :MdLive                                                              *:MdLive*
-    Start the preview of the current buffer and open it in the browser.
-    If a tab is already connected to the buffer, only its URL is printed.
+    Starts the preview of the current buffer and opens it in the browser.
+    If a tab is already connected to the buffer, only its URL is shown.
     With |mdlive-follow|, an open tab switches to the current buffer instead
     of a new tab being opened.
 
 :MdLiveStop                                                      *:MdLiveStop*
-    Stop the preview of the current buffer. The browser tab shows that the
-    preview stopped. With |mdlive-follow|, this stops the followed preview
-    from any buffer.
+    Stops the preview of the current buffer. The browser tab shows that the
+    preview stopped. In a buffer without a preview, it stops every preview,
+    such as the one following you with |mdlive-follow|.
 
 :MdLiveToggle                                                  *:MdLiveToggle*
-    Start or stop the preview of the current buffer.
+    Starts or stops the preview of the current buffer.
 
 :MdLiveExport[!] [file]                                        *:MdLiveExport*
-    Write the preview of the current buffer to a standalone HTML file, with
+    Writes the preview of the current buffer to a standalone HTML file, with
     styles, fonts and diagrams included. [file] defaults to the buffer's
-    file with an `.html` extension. Add [!] to overwrite an existing file.
-    The page is rendered by the browser, so a preview tab is opened first
-    if none is connected. See |mdlive-export|.
+    file with an `.html` extension. With [!], an existing file is
+    overwritten. The page is rendered by the browser, so a preview tab is
+    opened first if none is connected. See |mdlive-export|.
 
 Example mapping: >lua
     vim.keymap.set("n", "<leader>mv", "<cmd>MdLiveToggle<cr>",
@@ -106,7 +106,7 @@ port                                                      *mdlive-config-port*
 
 browser                                                *mdlive-config-browser*
     Type: `nil`, `string`, `string[]` or `fun(url: string)`, default: `nil`
-    How the preview is opened. `nil` uses the system default browser through
+    Opens the preview. `nil` uses the system default browser through
     |vim.ui.open()|. A string such as `"firefox"` or a list such as
     `{ "firefox", "--new-window" }` is run with the URL appended. A function
     receives the URL.
@@ -117,7 +117,7 @@ debounce_ms                                        *mdlive-config-debounce_ms*
 
 auto_open                                            *mdlive-config-auto_open*
     Type: `boolean`, default: `false`
-    Start the preview when a buffer with one of the `filetypes` is opened.
+    Starts the preview when a buffer with one of the `filetypes` is opened.
 
 filetypes                                            *mdlive-config-filetypes*
     Type: `string[]`, default: `{ "markdown" }`
@@ -125,46 +125,114 @@ filetypes                                            *mdlive-config-filetypes*
 
 follow                                                  *mdlive-config-follow*
     Type: `boolean`, default: `true`
-    Use a single tab that follows the buffer you are in. See |mdlive-follow|.
+    Uses a single tab that follows the buffer you are in. See |mdlive-follow|.
 
 scroll_sync                                        *mdlive-config-scroll_sync*
     Type: `boolean`, default: `true`
-    Scroll the preview to follow the cursor.
+    Scrolls the preview to follow the cursor.
 
 follow_theme                                      *mdlive-config-follow_theme*
     Type: `boolean`, default: `true`
-    Use the colors of the current colorscheme in the preview. When `false`,
+    Uses the colors of the current colorscheme in the preview. When `false`,
     the preview uses a light or dark theme based on the browser settings.
 
 code_line_numbers                            *mdlive-config-code_line_numbers*
     Type: `boolean`, default: `true`
-    Show line numbers on code blocks with more than one line. They are left
+    Shows line numbers on code blocks with more than one line. They are left
     out when copying the code and when printing. Double-click a number to
     move the cursor to that line.
 
 ==============================================================================
 6. LUA API                                                        *mdlive-api*
 
-mdlive.setup({opts})                                          *mdlive.setup()*
-    Set the options, see |mdlive-configuration|. Only needed to change them.
+The functions are in the `mdlive` module. Where they take a buffer, `0` means
+the current buffer. Errors are returned and also shown with |vim.notify()|.
 
-mdlive.open({bufnr})                                           *mdlive.open()*
-    Same as |:MdLive| for {bufnr}. `nil` or `0` means the current buffer.
+mdlive.setup({opts}?)                                         *mdlive.setup()*
+    Sets the options, see |mdlive-configuration|. Only needed to change them.
 
-mdlive.close({bufnr})                                         *mdlive.close()*
-    Stop the preview of {bufnr}. Without {bufnr} it behaves like
-    |:MdLiveStop|, including stopping the followed preview.
+    Parameters: ~
+      - {opts}?  (`table`) Options to change.
 
-mdlive.toggle({bufnr})                                       *mdlive.toggle()*
-    Same as |:MdLiveToggle| for {bufnr}.
+mdlive.enable({enable}?, {filter}?)                          *mdlive.enable()*
+    Starts or stops previews. |:MdLive| is `enable(true, { buf = 0 })`.
 
-mdlive.export({bufnr}, {opts})                               *mdlive.export()*
-    Same as |:MdLiveExport| for {bufnr}. {opts} is a table with:
-    - `path`: file to write, defaults to the buffer's file with `.html`
-    - `force`: `true` to overwrite an existing file
+    Examples: >lua
+        local mdlive = require("mdlive")
+        -- Stop every preview.
+        mdlive.enable(false)
+        -- Toggle the preview of the current buffer.
+        vim.keymap.set("n", "<leader>mv", function()
+          mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 })
+        end, { desc = "Markdown live preview" })
+<
+    Parameters: ~
+      - {enable}?  (`boolean`) `true` (the default) starts, `false` stops.
+      - {filter}?  (`table`) With the field:
+                   - {buf}? (`integer`) Buffer, `0` for the current one.
+                     Without it, `false` stops every preview and `true`
+                     previews the current buffer.
 
-mdlive.is_open({bufnr})                                     *mdlive.is_open()*
-    Return `true` if {bufnr} is being previewed.
+    Return (multiple): ~
+        (`true?`) `true` on success.
+        (`string?`) Error message on failure.
+
+mdlive.is_enabled({filter}?)                             *mdlive.is_enabled()*
+    Tells whether a buffer is being previewed.
+
+    Parameters: ~
+      - {filter}?  (`table`) With the field:
+                   - {buf}? (`integer`) Buffer, `0` for the current one.
+                     Without it, tells whether any buffer is previewed.
+
+    Return: ~
+        (`boolean`)
+
+mdlive.export({bufnr}?, {opts}?, {callback}?)                *mdlive.export()*
+    Same as |:MdLiveExport| for {bufnr}. The browser renders the page, so
+    the file is written later; {callback} reports the result.
+
+    Example: >lua
+        -- Export the current buffer next to its file, then open the result.
+        require("mdlive").export(0, nil, function(err, path)
+          if not err then
+            vim.ui.open(path)
+          end
+        end)
+<
+    Parameters: ~
+      - {bufnr}?     (`integer`) Buffer, `0` or `nil` for the current one.
+      - {opts}?      (`table`) With the fields:
+                     - {path}? (`string`) File to write, by default the
+                       buffer's file with an `.html` extension.
+                     - {force}? (`boolean`) Overwrites an existing file.
+      - {callback}?  (`fun(err: string?, path: string?)`) Called once, when
+                     the file is written ({err} is `nil`) or the export
+                     fails.
+
+    Return (multiple): ~
+        (`true?`) `true` when the export started.
+        (`string?`) Error message when it could not start, for example
+        when the file exists and {force} is not set. {callback} gets it too.
+
+------------------------------------------------------------------------------
+DEPRECATED FUNCTIONS                                       *mdlive-deprecated*
+
+These functions still work, show a warning once and will be removed in
+mdlive 1.0.
+
+mdlive.open({bufnr}?)                                          *mdlive.open()*
+    Use |mdlive.enable()|: `enable(true, { buf = bufnr })`.
+
+mdlive.close({bufnr}?)                                        *mdlive.close()*
+    Use |mdlive.enable()|: `enable(false, { buf = bufnr })`.
+
+mdlive.toggle({bufnr}?)                                      *mdlive.toggle()*
+    Use |mdlive.enable()| and |mdlive.is_enabled()|:
+    `enable(not is_enabled({ buf = bufnr }), { buf = bufnr })`.
+
+mdlive.is_open({bufnr}?)                                    *mdlive.is_open()*
+    Use |mdlive.is_enabled()|: `is_enabled({ buf = bufnr })`.
 
 ==============================================================================
 7. FEATURES                                                  *mdlive-features*
