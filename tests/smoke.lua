@@ -119,7 +119,7 @@ local ok, err = xpcall(function()
   assert(vim.uv.fs_symlink(notes .. "/real.svg", notes .. "/alias.svg"))
   local notes_buf = vim.fn.bufadd(notes .. "/index.md")
   check("serves no files for buffers without a preview", get(session .. "/files/" .. notes_buf .. "/real.svg") == 404)
-  require("mdlive").open(notes_buf)
+  require("mdlive").enable(true, { buf = notes_buf })
   local notes_files = session .. "/files/" .. notes_buf
   check("blocks symlinked directory pointing outside", get(notes_files .. "/secrets/key.txt") == 404)
   check("blocks symlinked file pointing outside", get(notes_files .. "/key.txt") == 404)
@@ -261,7 +261,7 @@ local ok, err = xpcall(function()
   )
   check(
     "open link returns its preview",
-    ok_json and data.url == session .. "/preview/" .. guide and require("mdlive").is_open(guide),
+    ok_json and data.url == session .. "/preview/" .. guide and require("mdlive").is_enabled({ buf = guide }),
     body
   )
   code, body = get(session .. "/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
@@ -277,7 +277,7 @@ local ok, err = xpcall(function()
   check("jump needs the token", get("/jump/" .. buf .. "?line=1", same_origin) == 404)
   check("jump only takes line numbers", get(session .. "/jump/" .. buf .. "?line=inf", same_origin) == 404)
 
-  -- :MdLiveExport: the connected tab renders the page and Neovim writes it.
+  -- Export: the connected tab renders the page and Neovim writes it.
   local messages = {}
   local notify = vim.notify
   ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
@@ -289,7 +289,12 @@ local ok, err = xpcall(function()
   local export_path = out_dir .. "/demo.html"
   local export_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
   vim.wait(300)
-  vim.cmd("MdLiveExport " .. export_path)
+  local exports_done = {}
+  local function on_export_done(err, path)
+    table.insert(exports_done, { err = err, path = path })
+  end
+  local export_started = require("mdlive").export(buf, { path = export_path }, on_export_done)
+  check("export returns true once the tab is asked", export_started == true)
   local _, export_events = export_stream()
   local job = export_events:match("event: export\ndata: ([^\n]*)")
   job = job and vim.json.decode(job)
@@ -313,18 +318,40 @@ local ok, err = xpcall(function()
     exported:close()
   end
   check("export writes the page", code == 200 and written == page, body)
+  vim.wait(500, function()
+    return #exports_done > 0
+  end, 10)
+  check(
+    "export calls back once with the written path",
+    #exports_done == 1 and exports_done[1].err == nil and exports_done[1].path == export_path,
+    vim.inspect(exports_done)
+  )
   check("export answers each request once", get(session .. "/export/" .. (job and job.id or 0), send_page) == 404)
 
   messages = {}
   vim.cmd("MdLiveExport " .. export_path)
   check("export refuses to overwrite", (messages[1] or ""):find("exists", 1, true), messages[1])
+  exports_done = {}
+  local refused, refused_err = require("mdlive").export(buf, { path = export_path }, on_export_done)
+  vim.wait(500, function()
+    return #exports_done > 0
+  end, 10)
+  check(
+    "export returns the error and calls back with it",
+    refused == nil
+      and (refused_err or ""):find("exists", 1, true)
+      and #exports_done == 1
+      and exports_done[1].err == refused_err,
+    vim.inspect({ refused_err, exports_done })
+  )
 
   -- A write that fails is reported instead of announced as exported.
   if vim.uv.fs_stat("/dev/full") then
     local full_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
     vim.wait(300)
     messages = {}
-    require("mdlive").export(buf, { path = "/dev/full", force = true })
+    exports_done = {}
+    require("mdlive").export(buf, { path = "/dev/full", force = true }, on_export_done)
     local _, full_events = full_stream()
     local full_job = full_events:match("event: export\ndata: ([^\n]*)")
     full_job = full_job and vim.json.decode(full_job)
@@ -335,10 +362,18 @@ local ok, err = xpcall(function()
       code == 404 and reported:find("could not write", 1, true) and not reported:find("exported to", 1, true),
       reported
     )
+    vim.wait(500, function()
+      return #exports_done > 0
+    end, 10)
+    check(
+      "export calls back with a failed write",
+      #exports_done == 1 and (exports_done[1].err or ""):find("could not write", 1, true),
+      vim.inspect(exports_done)
+    )
   end
   vim.notify = notify
 
-  require("mdlive").close(guide)
+  require("mdlive").enable(false, { buf = guide })
   vim.wait(200)
 
   -- Follow mode: a connected tab switches to the markdown buffer you enter.
@@ -354,7 +389,10 @@ local ok, err = xpcall(function()
     follow_events
   )
   check("follow reuses the tab", opened == nil, opened)
-  check("follow drops the previous preview", require("mdlive").is_open(guide) and not require("mdlive").is_open(buf))
+  check(
+    "follow drops the previous preview",
+    require("mdlive").is_enabled({ buf = guide }) and not require("mdlive").is_enabled({ buf = buf })
+  )
 
   -- LSP hover popups are markdown buffers in floating windows: not followed.
   local float_stream = curl(session .. "/events/" .. guide, { "-N" }, 1)
@@ -366,23 +404,90 @@ local ok, err = xpcall(function()
   local _, float_events = float_stream()
   check(
     "follow ignores floating windows",
-    not float_events:find("event: switch", 1, true) and require("mdlive").is_open(guide),
+    not float_events:find("event: switch", 1, true) and require("mdlive").is_enabled({ buf = guide }),
     float_events
   )
 
-  -- :MdLiveStop from a buffer that is not previewed stops the followed preview.
+  -- :MdLiveStop from a buffer that is not previewed stops the followed preview (and any other).
   vim.cmd.enew()
   vim.cmd("MdLiveStop")
   vim.wait(400)
-  check("MdLiveStop stops the followed preview from anywhere", not require("mdlive").is_open(guide))
+  check("MdLiveStop stops the followed preview from anywhere", not require("mdlive").is_enabled({ buf = guide }))
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)
 
   opened = nil
-  require("mdlive").open(guide)
+  require("mdlive").enable(true, { buf = guide })
   check("a new server start gets a new token", opened and not opened:find(session .. "/", 1, true), opened)
-  require("mdlive").close(guide)
+  require("mdlive").enable(false, { buf = guide })
   vim.wait(200)
+
+  -- Lua API: return values and buffer filters.
+  local mdlive = require("mdlive")
+  vim.cmd.buffer(buf)
+  local enabled, enable_err = mdlive.enable(true, { buf = 0 })
+  check("enable() returns true", enabled == true and enable_err == nil, enable_err)
+  check(
+    "is_enabled() with buffer 0, a buffer number and no filter",
+    mdlive.is_enabled({ buf = 0 }) and mdlive.is_enabled({ buf = buf }) and mdlive.is_enabled()
+  )
+  local gone = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_delete(gone, { force = true })
+  enabled, enable_err = mdlive.enable(true, { buf = gone })
+  check(
+    "enable() returns an error for an invalid buffer",
+    enabled == nil and (enable_err or ""):find("invalid buffer", 1, true),
+    enable_err
+  )
+  check("enable() rejects arguments of the wrong type", not pcall(mdlive.enable, "yes"))
+
+  -- Without follow mode every buffer keeps its own preview; enable(false) stops them all.
+  setup({ follow = false })
+  vim.cmd.buffer(guide)
+  mdlive.enable(true, { buf = guide })
+  check(
+    "previews two buffers without follow mode",
+    mdlive.is_enabled({ buf = buf }) and mdlive.is_enabled({ buf = guide })
+  )
+  vim.cmd("MdLiveStop")
+  check(
+    "MdLiveStop stops only the current buffer's preview",
+    mdlive.is_enabled({ buf = buf }) and not mdlive.is_enabled({ buf = guide })
+  )
+  vim.cmd("MdLiveToggle")
+  check("MdLiveToggle starts the preview", mdlive.is_enabled({ buf = guide }))
+  vim.cmd("MdLiveToggle")
+  check("MdLiveToggle stops the preview", not mdlive.is_enabled({ buf = guide }) and mdlive.is_enabled({ buf = buf }))
+  enabled = mdlive.enable(false)
+  check("enable(false) stops every preview", enabled == true and not mdlive.is_enabled())
+  vim.wait(400)
+  check("server stops after enable(false)", not require("mdlive.server").is_running())
+  setup()
+
+  -- The deprecated names still work and warn once each.
+  local deprecation_messages = {}
+  local real_notify_api = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(deprecation_messages, msg)
+  end
+  vim.cmd.buffer(buf)
+  mdlive.open()
+  check("deprecated open() starts the preview", mdlive.is_open() and mdlive.is_open(buf))
+  mdlive.toggle()
+  check("deprecated toggle() stops the preview", not mdlive.is_enabled({ buf = buf }))
+  mdlive.open(buf)
+  mdlive.close(buf)
+  check("deprecated close() stops the preview", not mdlive.is_enabled())
+  vim.notify = real_notify_api
+  local deprecations = table.concat(deprecation_messages, "\n")
+  check(
+    "deprecated functions warn once each",
+    select(2, deprecations:gsub("is deprecated", "")) == 4
+      and deprecations:find("mdlive.open() is deprecated, use mdlive.enable() instead", 1, true),
+    deprecations
+  )
+  vim.wait(400)
 
   -- auto_open previews markdown files, but not LSP hover popups (markdown in a scratch buffer).
   setup({ auto_open = true })
@@ -392,10 +497,14 @@ local ok, err = xpcall(function()
   local hover_win = vim.api.nvim_open_win(hover, true, popup)
   vim.bo[hover].filetype = "markdown"
   vim.api.nvim_win_close(hover_win, true)
-  check("auto_open skips LSP hover popups", opened == nil and not require("mdlive").is_open(hover), opened)
+  check("auto_open skips LSP hover popups", opened == nil and not require("mdlive").is_enabled({ buf = hover }), opened)
   vim.cmd.edit(notes .. "/index.md")
-  check("auto_open previews markdown files", opened ~= nil and require("mdlive").is_open(notes_buf), opened)
-  require("mdlive").close(notes_buf)
+  check(
+    "auto_open previews markdown files",
+    opened ~= nil and require("mdlive").is_enabled({ buf = notes_buf }),
+    opened
+  )
+  require("mdlive").enable(false, { buf = notes_buf })
   vim.wait(200)
   setup()
 
