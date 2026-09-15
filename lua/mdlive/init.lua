@@ -109,7 +109,7 @@ local function open_browser(url)
   end
 end
 
-local function buffer_dir(bufnr)
+local function buf_dir(bufnr)
   if not api.nvim_buf_is_valid(bufnr) then
     return nil
   end
@@ -118,7 +118,7 @@ local function buffer_dir(bufnr)
 end
 
 local function attach(bufnr)
-  local group = api.nvim_create_augroup("MdLiveBuf" .. bufnr, { clear = true })
+  local group = api.nvim_create_augroup("mdlive.buf." .. bufnr, { clear = true })
   local timer = vim.uv.new_timer()
   previews[bufnr] = { group = group, timer = timer }
 
@@ -166,7 +166,7 @@ local markdown_ext = { md = true, markdown = true, mdown = true, mkd = true, mkd
 -- A relative markdown link was clicked in the preview: show the file in the
 -- window of the source buffer and return the preview URL for it.
 local function open_link(from_buf, rel)
-  local dir = buffer_dir(from_buf)
+  local dir = buf_dir(from_buf)
   if not dir or rel == "" then
     return nil, "invalid link"
   end
@@ -296,10 +296,10 @@ local function start_server()
     is_previewed = function(bufnr)
       return previews[bufnr] ~= nil
     end,
-    buffer_dir = buffer_dir,
-    open_link = open_link,
-    jump = jump,
-    export = receive_export,
+    buf_dir = buf_dir,
+    on_open_link = open_link,
+    on_jump = jump,
+    on_export = receive_export,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
       send_settings(bufnr)
@@ -516,7 +516,7 @@ function M.export(bufnr, opts, callback)
     bufnr = bufnr,
     path = path,
     -- Relative images and links in the page must still work from where the file is written.
-    base = relative_url(vim.fs.dirname(path), buffer_dir(bufnr)),
+    base = relative_url(vim.fs.dirname(path), buf_dir(bufnr)),
     callback = callback,
   }
   vim.defer_fn(function()
@@ -540,7 +540,7 @@ end
 
 function M.setup(opts)
   config.setup(opts)
-  local group = api.nvim_create_augroup("MdLiveAutoOpen", { clear = true })
+  local group = api.nvim_create_augroup("mdlive.auto_open", { clear = true })
   if config.options.auto_open then
     api.nvim_create_autocmd("FileType", {
       group = group,
@@ -595,7 +595,7 @@ function M.is_open(bufnr)
   return M.is_enabled({ buf = bufnr or 0 })
 end
 
-local global_group = api.nvim_create_augroup("MdLive", { clear = true })
+local global_group = api.nvim_create_augroup("mdlive", { clear = true })
 api.nvim_create_autocmd("ColorScheme", {
   group = global_group,
   callback = function()

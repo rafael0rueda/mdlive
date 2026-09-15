@@ -281,18 +281,18 @@ local function post(sock, path, target, headers, body)
   local result, err
   if action == "export" then
     -- /export/<id>[?error=]: the rendered page for a pending export.
-    result, err = h.export(id, body, query_param(target, "error"))
+    result, err = h.on_export(id, body, query_param(target, "error"))
   elseif action == "open" or action == "jump" then
     if not h.is_previewed(id) then
       return json(sock, "404 Not Found", { error = "no preview for this buffer" })
     end
     if action == "open" then
       -- /open/<bufnr>?path=: a relative markdown link was clicked.
-      result, err = h.open_link(id, query_param(target, "path") or "")
+      result, err = h.on_open_link(id, query_param(target, "path") or "")
     else
       -- /jump/<bufnr>?line=: a block was double-clicked.
       local line = query_param(target, "line")
-      result, err = h.jump(id, line and line:match("^%d+$") and tonumber(line))
+      result, err = h.on_jump(id, line and line:match("^%d+$") and tonumber(line))
     end
   else
     return json(sock, "404 Not Found", { error = "not found" })
@@ -349,7 +349,7 @@ local function handle(sock, request)
   b = tonumber(b)
   if b then
     -- Only for buffers being previewed, not every file open in Neovim.
-    local dir = h.is_previewed(b) and h.buffer_dir(b)
+    local dir = h.is_previewed(b) and h.buf_dir(b)
     local full = dir and resolve(dir, file, { dir, vim.fn.getcwd() })
     -- PDFs cannot script this origin, and browsers refuse to show them sandboxed.
     local is_pdf = full and full:lower():match("%.pdf$")
@@ -443,10 +443,10 @@ local function on_connection(err)
 end
 
 --- Starts the server. `opts` holds host, port and the handlers
---- is_previewed(bufnr), buffer_dir(bufnr), on_subscribe(bufnr),
---- open_link(bufnr, relative_path) -> preview url | nil, error,
---- jump(bufnr, line) -> true | nil, error and
---- export(id, html, error) -> true | nil, error.
+--- is_previewed(bufnr), buf_dir(bufnr), on_subscribe(bufnr),
+--- on_open_link(bufnr, relative_path) -> preview url | nil, error,
+--- on_jump(bufnr, line) -> true | nil, error and
+--- on_export(id, html, error) -> true | nil, error.
 ---@return integer|nil port, string|nil error
 function M.start(opts)
   if state.server then
