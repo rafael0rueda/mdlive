@@ -49,6 +49,33 @@ jobs:
       - name: Browser tests
         run: node tests/browser.mjs
 
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LUALS_VERSION: 3.19.1
+    steps:
+      - uses: actions/checkout@v7
+
+      # The Neovim runtime provides the types of the vim and vim.uv modules.
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install lua-language-server
+        run: |
+          mkdir -p "$RUNNER_TEMP/luals"
+          curl -sSL "https://github.com/LuaLS/lua-language-server/releases/download/$LUALS_VERSION/lua-language-server-$LUALS_VERSION-linux-x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/luals"
+          echo "$RUNNER_TEMP/luals/bin" >> "$GITHUB_PATH"
+
+      - name: lua-language-server --check
+        run: |
+          export VIMRUNTIME="$(nvim --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)"
+          lua-language-server --check "$PWD" --checklevel=Warning --configpath "$PWD/.luarc.json" --check_format=pretty
+
   style:
     name: Stylua
     runs-on: ubuntu-latest

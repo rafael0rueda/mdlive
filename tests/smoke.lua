@@ -85,8 +85,8 @@ local ok, err = xpcall(function()
   check("rejects a wrong token", get("/" .. ("0"):rep(32) .. "/files/" .. buf .. "/assets/logo.svg") == 404)
 
   -- A connection that never finishes its request is closed.
-  local client, client_closed = vim.uv.new_tcp(), false
-  client:connect("127.0.0.1", tonumber(base:match(":(%d+)$")), function(connect_err)
+  local client, client_closed = assert(vim.uv.new_tcp()), false
+  client:connect("127.0.0.1", assert(tonumber(base:match(":(%d+)$"))), function(connect_err)
     if connect_err then
       client_closed = true
       return
@@ -214,6 +214,7 @@ local ok, err = xpcall(function()
   vim.wait(300)
   local warnings = {}
   local real_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
   vim.notify = function(msg)
     table.insert(warnings, msg)
   end
@@ -279,6 +280,7 @@ local ok, err = xpcall(function()
   -- :MdLiveExport: the connected tab renders the page and Neovim writes it.
   local messages = {}
   local notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
   vim.notify = function(msg)
     table.insert(messages, msg)
   end
@@ -305,10 +307,10 @@ local ok, err = xpcall(function()
   f:close()
   local send_page = vim.list_extend({ "--data-binary", "@" .. page_file }, same_origin)
   code, body = get(session .. "/export/" .. (job and job.id or 0), send_page)
-  f = io.open(export_path, "rb")
-  local written = f and f:read("*a")
-  if f then
-    f:close()
+  local exported = io.open(export_path, "rb")
+  local written = exported and exported:read("*a")
+  if exported then
+    exported:close()
   end
   check("export writes the page", code == 200 and written == page, body)
   check("export answers each request once", get(session .. "/export/" .. (job and job.id or 0), send_page) == 404)

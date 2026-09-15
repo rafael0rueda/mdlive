@@ -4,9 +4,31 @@ local theme = require("mdlive.theme")
 
 local M = {}
 
-local previews = {} -- [bufnr] = { group = augroup id, timer = uv timer, tick = changedtick last sent }
+---@class mdlive.Filter
+---@field buf? integer Buffer to act on, 0 for the current one. Without it, every preview.
+
+---@class mdlive.ExportOpts
+---@field path? string File to write, by default the buffer's file with an .html extension.
+---@field force? boolean Overwrites an existing file.
+
+---@class (private) mdlive.Preview
+---@field group integer Augroup of the buffer's autocmds.
+---@field timer uv.uv_timer_t Debounces sending the buffer.
+---@field tick? integer Changedtick last sent.
+
+---@class (private) mdlive.ExportJob
+---@field bufnr integer
+---@field path string
+---@field base string URL prefix that leads from the written file to the buffer's directory.
+---@field sent? boolean
+---@field callback? fun(err: string|nil, path: string|nil)
+
+---@type table<integer, mdlive.Preview>
+local previews = {}
+---@type integer|nil
 local active = nil -- follow mode: the buffer the preview tabs are showing
-local exports = {} -- [id] = { bufnr, path, base, sent, callback }
+---@type table<integer, mdlive.ExportJob>
+local exports = {}
 local export_id = 0
 local export_timeout = 20000
 local api = vim.api
@@ -119,7 +141,7 @@ end
 
 local function attach(bufnr)
   local group = api.nvim_create_augroup("mdlive.buf." .. bufnr, { clear = true })
-  local timer = vim.uv.new_timer()
+  local timer = assert(vim.uv.new_timer())
   previews[bufnr] = { group = group, timer = timer }
 
   api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
@@ -185,7 +207,7 @@ local function open_link(from_buf, rel)
     api.nvim_set_current_win(win)
   end
   if api.nvim_get_current_buf() ~= target then
-    local ok, err = pcall(vim.cmd, "buffer " .. target)
+    local ok, err = pcall(api.nvim_command, "buffer " .. target)
     if not ok then
       return nil, tostring(err)
     end
@@ -249,7 +271,7 @@ local function receive_export(id, html, err)
     -- A full disk can also make the final flush in close() fail.
     local written, write_err = file:write(html)
     local closed, close_err = file:close()
-    ok, err = written and closed, write_err or close_err
+    ok, err = written ~= nil and closed ~= nil, write_err or close_err
   end
   if not ok then
     finish_export(id, "could not write " .. job.path .. ": " .. tostring(err))
@@ -363,7 +385,7 @@ local function follow(bufnr)
   server.broadcast(from, "switch", { bufnr = bufnr })
   -- The tabs reconnect to the new buffer; drop the old preview once the event is out.
   vim.defer_fn(function()
-    if active ~= from and previews[from] then
+    if from and active ~= from and previews[from] then
       server.disconnect(from)
       detach(from)
     end
@@ -425,6 +447,10 @@ end
 --- one. Without it, `enable(false)` stops every preview and `enable(true)`
 --- previews the current buffer. `enable` defaults to true. Returns true, or nil
 --- and a message on failure (the message is also shown).
+---@param enable? boolean
+---@param filter? mdlive.Filter
+---@return true|nil ok
+---@return string|nil err
 function M.enable(enable, filter)
   local ok, err = supported()
   if not ok then
@@ -451,6 +477,8 @@ end
 
 --- Returns whether the buffer `filter.buf` (0 for the current one) is being
 --- previewed, or without it, whether any buffer is.
+---@param filter? mdlive.Filter
+---@return boolean
 function M.is_enabled(filter)
   local buf = filter and filter.buf
   if buf == nil then
@@ -465,6 +493,11 @@ end
 --- `opts.force` overwrites an existing file. Returns true once the export is
 --- queued, or nil and a message (also shown). `callback(err, path)` is called
 --- once, when the file is written or the export fails.
+---@param bufnr? integer Buffer to export, 0 or nil for the current one.
+---@param opts? mdlive.ExportOpts
+---@param callback? fun(err: string|nil, path: string|nil)
+---@return true|nil ok
+---@return string|nil err
 function M.export(bufnr, opts, callback)
   local path
   -- Every failure is shown and handed to the callback.
@@ -538,6 +571,8 @@ function M.export(bufnr, opts, callback)
   return true
 end
 
+--- Sets the options (see :help mdlive-configuration) and applies them to open previews.
+---@param opts? mdlive.Opts
 function M.setup(opts)
   config.setup(opts)
   local group = api.nvim_create_augroup("mdlive.auto_open", { clear = true })
@@ -567,12 +602,16 @@ local function deprecate(name, alternative)
 end
 
 --- Deprecated: use mdlive.enable().
+---@deprecated
+---@param bufnr? integer
 function M.open(bufnr)
   deprecate("mdlive.open()", "mdlive.enable()")
   M.enable(true, { buf = bufnr or 0 })
 end
 
 --- Deprecated: use mdlive.enable(false).
+---@deprecated
+---@param bufnr? integer
 function M.close(bufnr)
   deprecate("mdlive.close()", "mdlive.enable(false)")
   -- Without a buffer, follow mode stops the followed preview from anywhere.
@@ -583,6 +622,8 @@ function M.close(bufnr)
 end
 
 --- Deprecated: use mdlive.enable(not mdlive.is_enabled()).
+---@deprecated
+---@param bufnr? integer
 function M.toggle(bufnr)
   deprecate("mdlive.toggle()", "mdlive.enable(not mdlive.is_enabled())")
   local filter = { buf = resolve_buf(bufnr) }
@@ -590,6 +631,9 @@ function M.toggle(bufnr)
 end
 
 --- Deprecated: use mdlive.is_enabled().
+---@deprecated
+---@param bufnr? integer
+---@return boolean
 function M.is_open(bufnr)
   deprecate("mdlive.is_open()", "mdlive.is_enabled()")
   return M.is_enabled({ buf = bufnr or 0 })

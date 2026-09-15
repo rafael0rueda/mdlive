@@ -61,7 +61,7 @@ local function check_server()
   if server.is_running() then
     health.ok(("Running on %s:%d"):format(opts.host, server.port()))
   else
-    local tcp = vim.uv.new_tcp()
+    local tcp = assert(vim.uv.new_tcp())
     local ok, err = tcp:bind(opts.host, opts.port)
     if ok then
       ok, err = tcp:listen(1, function() end)

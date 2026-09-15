@@ -3,6 +3,16 @@ local uv = vim.uv
 
 local M = {}
 
+---@class mdlive.ServerOpts
+---@field host string
+---@field port integer
+---@field is_previewed fun(bufnr: integer): boolean
+---@field buf_dir fun(bufnr: integer): string|nil Directory the buffer's files are served from.
+---@field on_subscribe fun(bufnr: integer) Handles a tab connecting to the buffer's preview.
+---@field on_open_link fun(bufnr: integer, path: string): string|nil, string|nil Handles a clicked markdown link; returns the preview path of the opened file.
+---@field on_jump fun(bufnr: integer, line: integer|nil): true|nil, string|nil Handles a double-clicked block; `line` is 0-based.
+---@field on_export fun(id: integer, html: string, err: string|nil): true|nil, string|nil Handles the rendered page of a pending export.
+
 local source = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p")
 local root = vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(source)))
 local app_dir = vim.fs.joinpath(root, "app")
@@ -18,6 +28,16 @@ local max_queue = 32 * 1024 * 1024
 -- so the tests can shorten it.
 M.request_timeout = 10000
 
+---@class (private) mdlive.ServerState
+---@field server? uv.uv_tcp_t
+---@field host? string
+---@field port? integer
+---@field token? string
+---@field heartbeat? uv.uv_timer_t
+---@field handlers? mdlive.ServerOpts
+---@field clients table<integer, table<uv.uv_tcp_t, true>>
+
+---@type mdlive.ServerState
 local state = {
   server = nil,
   host = nil,
@@ -255,7 +275,7 @@ local function subscribe(sock, bufnr)
   }, "\r\n"))
   state.clients[bufnr] = state.clients[bufnr] or {}
   state.clients[bufnr][sock] = true
-  state.handlers.on_subscribe(bufnr)
+  assert(state.handlers).on_subscribe(bufnr)
 end
 
 -- Rejects requests whose Host header is not local, which blocks DNS-rebinding attacks.
@@ -274,9 +294,12 @@ local function post(sock, path, target, headers, body)
   if headers["x-mdlive"] ~= "1" or headers.origin ~= "http://" .. headers.host then
     return json(sock, "403 Forbidden", { error = "forbidden" })
   end
-  local h = state.handlers
-  local action, id = path:match("^/(%l+)/(%d+)$")
-  id = tonumber(id)
+  local h = assert(state.handlers)
+  local action, digits = path:match("^/(%l+)/(%d+)$")
+  if not action then
+    return json(sock, "404 Not Found", { error = "not found" })
+  end
+  local id = tonumber(digits) --[[@as integer]]
 
   local result, err
   if action == "export" then
@@ -311,7 +334,6 @@ local function handle(sock, request)
   end
 
   local path = url_decode((target:gsub("[?#].*$", "")))
-  local h = state.handlers
 
   -- The bundled page scripts and styles hold nothing private.
   local asset = path:match("^/app/(.+)$")
@@ -324,6 +346,7 @@ local function handle(sock, request)
     return text(sock, "404 Not Found", "Not found")
   end
   path = rest
+  local h = assert(state.handlers)
 
   if method == "POST" then
     return post(sock, path, target, headers, request.body)
@@ -372,11 +395,11 @@ local function on_connection(err)
   if err then
     return
   end
-  local sock = uv.new_tcp()
-  state.server:accept(sock)
+  local sock = assert(uv.new_tcp())
+  assert(state.server):accept(sock)
 
   local chunks, size, request, handled = {}, 0, nil, false
-  local timer = uv.new_timer()
+  local timer = assert(uv.new_timer())
   timer:start(M.request_timeout, 0, function()
     close(timer)
     if not handled then
@@ -442,17 +465,15 @@ local function on_connection(err)
   end)
 end
 
---- Starts the server. `opts` holds host, port and the handlers
---- is_previewed(bufnr), buf_dir(bufnr), on_subscribe(bufnr),
---- on_open_link(bufnr, relative_path) -> preview url | nil, error,
---- on_jump(bufnr, line) -> true | nil, error and
---- on_export(id, html, error) -> true | nil, error.
----@return integer|nil port, string|nil error
+--- Starts the server, or returns the port of the one already running.
+---@param opts mdlive.ServerOpts
+---@return integer|nil port
+---@return string|nil err
 function M.start(opts)
   if state.server then
     return state.port
   end
-  local server = uv.new_tcp()
+  local server = assert(uv.new_tcp())
   local ok, err = server:bind(opts.host, opts.port)
   if not ok then
     close(server)
@@ -470,8 +491,9 @@ function M.start(opts)
   state.port = server:getsockname().port
 
   -- Comments keep idle connections alive and let us notice closed tabs.
-  state.heartbeat = uv.new_timer()
-  state.heartbeat:start(15000, 15000, function()
+  local heartbeat = assert(uv.new_timer())
+  state.heartbeat = heartbeat
+  heartbeat:start(15000, 15000, function()
     for _, set in pairs(state.clients) do
       for sock in pairs(set) do
         if not sock:is_closing() then
@@ -483,6 +505,7 @@ function M.start(opts)
   return state.port
 end
 
+--- Stops the server and closes every connection.
 function M.stop()
   for _, set in pairs(state.clients) do
     for sock in pairs(set) do
@@ -495,15 +518,20 @@ function M.stop()
   state.server, state.port, state.token, state.heartbeat, state.handlers = nil, nil, nil, nil, nil
 end
 
+---@return boolean
 function M.is_running()
   return state.server ~= nil
 end
 
+--- Port the server listens on, nil when it is not running.
+---@return integer|nil
 function M.port()
   return state.port
 end
 
 --- Number of browser tabs connected to a buffer's preview.
+---@param bufnr integer
+---@return integer
 function M.client_count(bufnr)
   local count = 0
   for sock in pairs(state.clients[bufnr] or {}) do
@@ -514,6 +542,10 @@ function M.client_count(bufnr)
   return count
 end
 
+--- Sends an event to every tab connected to a buffer's preview.
+---@param bufnr integer|nil
+---@param event string
+---@param data table
 function M.broadcast(bufnr, event, data)
   local set = state.clients[bufnr]
   if not set then
@@ -530,6 +562,7 @@ function M.broadcast(bufnr, event, data)
 end
 
 --- Closes every browser connection for a buffer.
+---@param bufnr integer
 function M.disconnect(bufnr)
   for sock in pairs(state.clients[bufnr] or {}) do
     close(sock)
@@ -538,12 +571,17 @@ function M.disconnect(bufnr)
 end
 
 --- Path of a buffer's preview page, token included.
+---@param bufnr integer
+---@return string
 function M.preview_path(bufnr)
   return ("/%s/preview/%d"):format(state.token, bufnr)
 end
 
+--- URL of a buffer's preview page.
+---@param bufnr integer
+---@return string
 function M.url(bufnr)
-  local host = state.host
+  local host = assert(state.host, "the server is not running")
   if host == "0.0.0.0" or host == "::" then
     host = "127.0.0.1"
   elseif host:find(":", 1, true) then
