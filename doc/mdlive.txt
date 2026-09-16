@@ -70,8 +70,26 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
     overwritten. The page is rendered by the browser, so a preview tab is
     opened first if none is connected. See |mdlive-export|.
 
-Example mapping: >lua
-    vim.keymap.set("n", "<leader>mv", "<cmd>MdLiveToggle<cr>",
+------------------------------------------------------------------------------
+MAPPINGS                                                     *mdlive-mappings*
+
+mdlive maps no keys. Each command has a Normal mode mapping that you can bind
+to your own keys.
+
+<Plug>(MdLive)                                                *<Plug>(MdLive)*
+    Same as |:MdLive|.
+
+<Plug>(MdLiveStop)                                        *<Plug>(MdLiveStop)*
+    Same as |:MdLiveStop|.
+
+<Plug>(MdLiveToggle)                                    *<Plug>(MdLiveToggle)*
+    Same as |:MdLiveToggle|.
+
+<Plug>(MdLiveExport)                                    *<Plug>(MdLiveExport)*
+    Same as |:MdLiveExport| without [file] or [!].
+
+Example: >lua
+    vim.keymap.set("n", "<leader>mv", "<Plug>(MdLiveToggle)",
       { desc = "Markdown live preview" })
 <
 ==============================================================================

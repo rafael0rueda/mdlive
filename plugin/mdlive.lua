@@ -3,7 +3,11 @@ if vim.g.loaded_mdlive then
 end
 vim.g.loaded_mdlive = true
 
-local command = vim.api.nvim_create_user_command
+-- Each command also gets a Normal mode <Plug>(Name) mapping to bind to your own keys.
+local function command(name, fn, opts)
+  vim.api.nvim_create_user_command(name, fn, opts)
+  vim.keymap.set("n", "<Plug>(" .. name .. ")", "<Cmd>" .. name .. "<CR>", { desc = opts.desc })
+end
 
 command("MdLive", function()
   require("mdlive").enable(true, { buf = 0 })

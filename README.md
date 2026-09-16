@@ -68,10 +68,12 @@ require("mdlive").setup()
 
 To get a PDF, print the preview from the browser.
 
-Example mapping:
+mdlive maps no keys. Each command has a Normal mode mapping to bind to your own
+keys: `<Plug>(MdLive)`, `<Plug>(MdLiveStop)`, `<Plug>(MdLiveToggle)` and
+`<Plug>(MdLiveExport)`.
 
 ```lua
-vim.keymap.set("n", "<leader>mp", "<cmd>MdLiveToggle<cr>", { desc = "Markdown preview" })
+vim.keymap.set("n", "<leader>mp", "<Plug>(MdLiveToggle)", { desc = "Markdown preview" })
 ```
 
 The same actions are available from Lua with `enable()`, `is_enabled()` and
