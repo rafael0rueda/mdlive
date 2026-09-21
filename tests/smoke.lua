@@ -125,6 +125,20 @@ local ok, err = xpcall(function()
   check("blocks symlinked file pointing outside", get(notes_files .. "/key.txt") == 404)
   check("serves symlink pointing inside", get(notes_files .. "/alias.svg") == 200)
 
+  -- The working directory is only a root for files inside it: this buffer is
+  -- not, so the repository Neovim was started in stays out of reach.
+  local to_cwd = ("../"):rep(20) .. root:sub(2)
+  check(
+    "serves no cwd files for a buffer outside the cwd",
+    get(notes_files .. "/" .. to_cwd .. "/lua/mdlive/init.lua") == 404
+  )
+
+  -- `file_root` puts a directory of one's own choice within reach instead.
+  setup({ file_root = sandbox })
+  check("file_root opens up the directory it names", get(notes_files .. "/../secrets/key.txt") == 200)
+  setup()
+  check("the files are out of reach again without file_root", get(notes_files .. "/../secrets/key.txt") == 404)
+
   -- Files are streamed in chunks, and Range requests get part of them.
   local big = ("0123456789abcdef"):rep(384 * 1024) -- 6 MiB
   local big_file = assert(io.open(notes .. "/big.txt", "wb"))
@@ -250,6 +264,35 @@ local ok, err = xpcall(function()
     get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: http://evil.example" }) == 403
   )
   check("open link only opens markdown", get(open .. "assets%2Flogo.svg", same_origin) == 404)
+  -- A link may not reach outside the markdown's directory and the cwd, which
+  -- would also make the directory it lands in serve its files.
+  vim.fn.writefile({ "# Outside" }, secrets .. "/outside.md")
+  local outside = vim.uri_encode(("../"):rep(20) .. secrets:sub(2) .. "/outside.md")
+  code, body = get(open .. outside, same_origin)
+  check("open link stays inside the allowed directories", code == 404, body)
+  check(
+    "open link does not add a preview for an outside file",
+    vim.fn.bufnr(secrets .. "/outside.md") == -1 and not vim.api.nvim_buf_get_name(0):find("outside", 1, true)
+  )
+
+  -- A client that does not know the token cannot make Neovim wait for, and
+  -- buffer, a body: the request is answered before the body is sent.
+  local port = assert(tonumber(base:match(":(%d+)$")))
+  local raw, status = assert(vim.uv.new_tcp()), nil
+  raw:connect("127.0.0.1", port, function(connect_err)
+    if connect_err then
+      return
+    end
+    local head = "POST /nope/nope HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nContent-Length: %d\r\n\r\n"
+    raw:write(head:format(port, 64 * 1024 * 1024))
+    raw:read_start(function(_, chunk)
+      status = status or (chunk and chunk:match("^HTTP/1%.1 (%d+)"))
+    end)
+  end)
+  check("answers a body it will not read without waiting for it", vim.wait(2000, function()
+    return status ~= nil
+  end, 10) and status == "404", status)
+  raw:close()
 
   code, body = get(open .. "docs%2Fguide.md", same_origin)
   local guide = vim.api.nvim_get_current_buf()
@@ -263,6 +306,11 @@ local ok, err = xpcall(function()
     "open link returns its preview",
     ok_json and data.url == session .. "/preview/" .. guide and require("mdlive").is_enabled({ buf = guide }),
     body
+  )
+  -- guide.md is in examples/docs, the image a directory up: still under the cwd.
+  check(
+    "serves cwd files for a buffer inside the cwd",
+    get(session .. "/files/" .. guide .. "/../assets/logo.svg") == 200
   )
   code, body = get(session .. "/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
   check("link back reuses the demo buffer", code == 200 and vim.api.nvim_get_current_buf() == buf, body)
@@ -471,6 +519,69 @@ local ok, err = xpcall(function()
   vim.wait(400)
   check("server stops after enable(false)", not require("mdlive.server").is_running())
   setup()
+
+  -- Starting a browser: the preview URL carries the token, so it is not put on
+  -- a command line, which every user on the machine can read.
+  local argv = sandbox .. "/browser-argv.txt"
+  local function browser_argument(extra)
+    vim.fn.delete(argv)
+    local command = { "sh", "-c", 'printf "%s" "$0" > ' .. argv }
+    setup(vim.tbl_extend("force", { browser = command }, extra or {}))
+    vim.cmd.buffer(buf)
+    vim.cmd("MdLive")
+    vim.wait(3000, function()
+      return vim.uv.fs_stat(argv) ~= nil
+    end, 20)
+    local argument = table.concat(vim.fn.readfile(argv), "")
+    require("mdlive").enable(false)
+    vim.wait(400)
+    return argument
+  end
+
+  local argument = browser_argument()
+  check("the browser is started on a file, not on the preview URL", argument:match("^file://") ~= nil, argument)
+  local redirect = vim.uri_to_fname(argument)
+  local redirect_stat = vim.uv.fs_stat(redirect)
+  check(
+    "only its owner can read the file holding the token",
+    redirect_stat and ("%o"):format(redirect_stat.mode % 512) == "600",
+    redirect_stat and ("%o"):format(redirect_stat.mode % 512)
+  )
+  local redirect_page = table.concat(vim.fn.readfile(redirect), "\n")
+  check(
+    "the file redirects to the preview",
+    redirect_page:match("http://127%.0%.0%.1:%d+/%x+/preview/%d+") ~= nil,
+    redirect_page
+  )
+  vim.api.nvim_exec_autocmds("VimLeavePre", { group = "mdlive" })
+  check("the redirect file is removed when Neovim quits", vim.uv.fs_stat(redirect) == nil)
+
+  local cache = vim.fs.joinpath(vim.fn.stdpath("cache"), "mdlive")
+  local before = #vim.fn.readdir(cache)
+  argument = browser_argument({ browser_redirect = false })
+  check(
+    "browser_redirect = false hands the browser the URL itself",
+    argument:match("^http://127%.0%.0%.1:%d+/%x+/preview/%d+$") ~= nil,
+    argument
+  )
+  check("browser_redirect = false writes no file holding the token", #vim.fn.readdir(cache) == before)
+
+  -- Writing the redirect must never keep the preview from opening: point the
+  -- cache at a path below a regular file, so the directory cannot be made.
+  local real_cache = vim.env.XDG_CACHE_HOME
+  vim.env.XDG_CACHE_HOME = notes .. "/index.md"
+  argument = browser_argument()
+  vim.env.XDG_CACHE_HOME = real_cache
+  check(
+    "falls back to the URL when the redirect cannot be written",
+    argument:match("^http://127%.0%.0%.1:%d+/%x+/preview/%d+$") ~= nil,
+    argument
+  )
+  setup()
+  vim.cmd("MdLive")
+  check("a browser function is still given the preview URL itself", (opened or ""):match("^http://") ~= nil, opened)
+  require("mdlive").enable(false)
+  vim.wait(400)
 
   -- The deprecated names still work and warn once each.
   local deprecation_messages = {}

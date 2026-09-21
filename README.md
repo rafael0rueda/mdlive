@@ -89,7 +89,9 @@ Try it with `examples/demo.md`.
 require("mdlive").setup({
   host = "127.0.0.1",   -- address the server binds to
   port = 0,             -- 0 = pick a free port
+  file_root = nil,      -- nil = the working directory, when the file is inside it
   browser = nil,        -- nil = system default, "firefox", { "firefox", "--new-window" } or function(url)
+  browser_redirect = true, -- keep the preview URL out of the process list (off for sandboxed browsers)
   debounce_ms = 150,    -- delay after the last edit before updating
   auto_open = false,    -- open the preview when a buffer of `filetypes` is opened
   filetypes = { "markdown" },

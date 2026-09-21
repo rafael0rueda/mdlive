@@ -39,14 +39,53 @@ function check(name, ok, detail) {
 
 let nvim;
 let page;
+let launcher;
+let launcherDir;
 try {
-  nvim = await startNeovim({ dir, file: "examples/demo.md" });
   page = await startChrome({ dir });
+
+  // Starting the browser -----------------------------------------------------
+
+  // The preview URL carries the token, so it is not handed to the browser on a
+  // command line, which every user on the machine can read: the browser is
+  // started on a file that redirects to the preview instead.
+  launcherDir = tempDir();
+  const recorded = join(launcherDir, "argv.txt");
+  launcher = await startNeovim({
+    dir: launcherDir,
+    file: "examples/demo.md",
+    browser: `{ "sh", "-c", 'printf "%s" "$0" > ${recorded}' }`,
+  });
+  const launched = await waitFor(() => existsSync(recorded) && readFileSync(recorded, "utf8").trim());
+  check("the browser is started on a file, not on the preview URL", Boolean(launched?.startsWith("file://")), launched);
+  check("the token is not on the command line", !/\/[0-9a-f]{32}\//.test(launched ?? ""), launched);
+
+  await page.send("Page.navigate", { url: launched });
+  const landed = await waitFor(
+    async () => {
+      const href = await page.eval("location.href");
+      return /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/preview\/\d+/.test(href) && href;
+    },
+    { timeout: 15000 },
+  );
+  check("the file redirects to the preview", Boolean(landed), landed || (await page.eval("location.href")));
+  const redirected = await waitFor(() => page.eval(`document.querySelector("h1")?.textContent`), { timeout: 20000 });
+  check("the preview works after the redirect", redirected === "mdlive demo", redirected);
+  const history = await page.send("Page.getNavigationHistory");
+  check(
+    "the redirect leaves no entry to go back to",
+    !history.entries.some((entry) => entry.url.startsWith("file://")),
+    history.entries.map((entry) => entry.url),
+  );
+  launcher.kill("SIGKILL");
+  launcher = null;
+
+  // Rendering ----------------------------------------------------------------
+
+  nvim = await startNeovim({ dir, file: "examples/demo.md" });
   await page.goto(nvim.url);
   const [, token, , bufnr] = new URL(nvim.url).pathname.split("/");
   const files = `/${token}/files/${bufnr}/`;
-
-  // Rendering ----------------------------------------------------------------
 
   const heading = await waitFor(
     () => page.eval(`document.querySelector(".mermaid-block svg") && document.querySelector("h1")?.textContent`),
@@ -272,7 +311,10 @@ try {
   try {
     await page?.close();
     nvim?.kill("SIGKILL");
-    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    launcher?.kill("SIGKILL");
+    for (const path of [dir, launcherDir]) {
+      if (path) rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
   } catch (err) {
     console.log(`warning: cleanup failed: ${err.message}`);
     if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Browser tests::cleanup failed: ${err.message}`);

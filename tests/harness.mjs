@@ -32,11 +32,14 @@ export async function waitFor(predicate, { timeout = 10000, interval = 100 } = {
 // ------------------------------------------------------------------ neovim
 
 // Starts Neovim with mdlive previewing `file`. `commands` run before the file is
-// opened, for example to pick a colorscheme.
-export async function startNeovim({ dir, file, commands = [] }) {
+// opened, for example to pick a colorscheme. `browser` is a Lua expression for
+// the `browser` option; by default the preview URL is captured and returned as
+// `nvim.url`, which a browser command would not let us see.
+export async function startNeovim({ dir, file, commands = [], browser = null }) {
   const socket = join(dir, "nvim.sock");
   const args = ["--headless", "--clean", "--listen", socket, "--cmd", "set rtp^=. noswapfile lines=24 columns=100"];
-  args.push("-c", 'lua require("mdlive").setup({ browser = function(url) vim.g.mdlive_url = url end })');
+  const option = browser ?? "function(url) vim.g.mdlive_url = url end";
+  args.push("-c", `lua require("mdlive").setup({ browser = ${option} })`);
   for (const command of commands) args.push("-c", command);
   args.push("-c", `edit ${file}`, "-c", "MdLive");
   const proc = spawn("nvim", args, { stdio: "ignore" });
@@ -54,14 +57,15 @@ export async function startNeovim({ dir, file, commands = [] }) {
     kill: (signal = "SIGTERM") => proc.kill(signal),
   };
 
-  const url = await waitFor(
-    async () => startError || (existsSync(socket) && (await nvim.expr("get(g:, 'mdlive_url', '')")).trim()),
-  );
+  // With a browser command there is no URL to wait for: the caller picks it up
+  // from whatever that command does with it.
+  const expression = browser ? "get(g:, 'mdlive_url', 'started')" : "get(g:, 'mdlive_url', '')";
+  const url = await waitFor(async () => startError || (existsSync(socket) && (await nvim.expr(expression)).trim()));
   if (!url || startError) {
     proc.kill("SIGKILL");
     throw new Error(startError ? `Could not start Neovim: ${startError.message}` : "Neovim did not start the preview");
   }
-  nvim.url = url;
+  if (!browser) nvim.url = url;
   return nvim;
 }
 

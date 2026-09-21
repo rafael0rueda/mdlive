@@ -110,22 +110,106 @@ local function send_exports(bufnr)
   end
 end
 
+-- The preview URL carries the token, and the arguments a program is started
+-- with are readable by every user on the machine (/proc/<pid>/cmdline). The
+-- browser is pointed at a file only you can read, which redirects to the
+-- preview, so the token never appears in a process list.
+local redirect_ttl = 15000
+---@type table<string, true>
+local redirects = {}
+
+local function drop_redirect(path)
+  redirects[path] = nil
+  vim.uv.fs_unlink(path, function() end)
+end
+
+local function escape_html(text)
+  return (
+    text:gsub("[&<>\"']", {
+      ["&"] = "&amp;",
+      ["<"] = "&lt;",
+      [">"] = "&gt;",
+      ['"'] = "&quot;",
+      ["'"] = "&#39;",
+    })
+  )
+end
+
+--- Writes a page that redirects to `url`, and returns its file:// URI. Returns
+--- nil when it cannot be written, so the caller falls back to the URL itself.
+---@param url string
+---@return string|nil
+local function redirect_file(url)
+  local dir = vim.fs.joinpath(vim.fn.stdpath("cache"), "mdlive")
+  -- mkdir() throws when the directory cannot be created, e.g. under a cache
+  -- directory that does not exist and cannot be made.
+  local created, result = pcall(vim.fn.mkdir, dir, "p")
+  if not created or result == 0 then
+    return nil
+  end
+  local name = assert(vim.uv.random(8)):gsub(".", function(c)
+    return ("%02x"):format(c:byte())
+  end)
+  local path = vim.fs.joinpath(dir, "open-" .. name .. ".html")
+  -- Created exclusively and readable only by its owner: another user on the
+  -- machine cannot read the token out of it.
+  local fd = vim.uv.fs_open(path, "wx", tonumber("600", 8))
+  if not fd then
+    return nil
+  end
+  local href = escape_html(url)
+  local page = ([[
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>mdlive</title>
+    <meta http-equiv="refresh" content="0; url=%s" />
+  </head>
+  <body>
+    <a href="%s">Open the mdlive preview</a>
+    <script>location.replace(%s)</script>
+  </body>
+</html>
+]]):format(href, href, vim.json.encode(url))
+  local written = vim.uv.fs_write(fd, page)
+  vim.uv.fs_close(fd)
+  if not written then
+    drop_redirect(path)
+    return nil
+  end
+  redirects[path] = true
+  vim.defer_fn(function()
+    drop_redirect(path)
+  end, redirect_ttl)
+  return vim.uri_from_fname(path)
+end
+
 local function open_browser(url)
   local browser = config.options.browser
   if type(browser) == "function" then
+    -- Runs inside Neovim: the URL is not passed to another program.
     return browser(url)
+  end
+  -- Everything below starts a program with the URL in its arguments. Writing
+  -- the redirect must never keep the preview from opening: on any failure the
+  -- URL itself is used.
+  local target = url
+  if config.options.browser_redirect then
+    local ok, redirect = pcall(redirect_file, url)
+    target = (ok and redirect) or url
   end
   if type(browser) == "string" then
     browser = { browser }
   end
   if type(browser) == "table" then
-    local ok, err = pcall(vim.system, vim.list_extend(vim.deepcopy(browser), { url }), { detach = true })
+    local ok, err = pcall(vim.system, vim.list_extend(vim.deepcopy(browser), { target }), { detach = true })
     if not ok then
       notify("could not start browser: " .. tostring(err), vim.log.levels.ERROR)
     end
     return
   end
-  local _, err = vim.ui.open(url)
+  local _, err = vim.ui.open(target)
   if err then
     notify(err .. " (open " .. url .. " manually)", vim.log.levels.WARN)
   end
@@ -137,6 +221,22 @@ local function buf_dir(bufnr)
   end
   local name = api.nvim_buf_get_name(bufnr)
   return name ~= "" and vim.fs.dirname(vim.fn.fnamemodify(name, ":p")) or vim.fn.getcwd()
+end
+
+-- Directories the preview may read files from: the markdown file's own
+-- directory, plus the project it is in. The working directory counts as that
+-- project only when the file is inside it, so previewing /tmp/notes.md from a
+-- Neovim started in ~ does not put the whole home directory within reach.
+---@param dir string
+---@return string[]
+local function file_roots(dir)
+  local roots = { dir }
+  -- A `file_root` may be relative, or start with ~.
+  local root = vim.fs.normalize(vim.fn.fnamemodify(config.options.file_root or vim.fn.getcwd(), ":p"))
+  if root ~= dir and vim.fs.relpath(root, dir) then
+    roots[#roots + 1] = root
+  end
+  return roots
 end
 
 local function attach(bufnr)
@@ -192,7 +292,13 @@ local function open_link(from_buf, rel)
   if not dir or rel == "" then
     return nil, "invalid link"
   end
-  local path = vim.fs.normalize(vim.fs.joinpath(dir, rel))
+  -- Confined to the same directories as the files the preview may fetch, so a
+  -- link in an untrusted document cannot reach the rest of the filesystem.
+  local path = server.resolve(dir, rel, file_roots(dir))
+  if not path then
+    return nil, "file not found"
+  end
+  -- Checked after resolving: a symlink named .md must not open something else.
   if not markdown_ext[(path:match("%.(%w+)$") or ""):lower()] then
     return nil, "not a markdown file"
   end
@@ -319,6 +425,7 @@ local function start_server()
       return previews[bufnr] ~= nil
     end,
     buf_dir = buf_dir,
+    file_roots = file_roots,
     on_open_link = open_link,
     on_jump = jump,
     on_export = receive_export,
@@ -516,6 +623,8 @@ function M.export(bufnr, opts, callback)
     return fail(err)
   end
   vim.validate("opts", opts, "table", true)
+  vim.validate("opts.path", opts and opts.path, "string", true)
+  vim.validate("opts.force", opts and opts.force, "boolean", true)
   vim.validate("callback", callback, "function", true)
   bufnr = resolve_buf(bufnr)
   if not api.nvim_buf_is_valid(bufnr) then
@@ -640,6 +749,16 @@ function M.is_open(bufnr)
 end
 
 local global_group = api.nvim_create_augroup("mdlive", { clear = true })
+-- Redirect files are removed a few seconds after the browser starts; drop any
+-- that Neovim is still holding when it quits before then.
+api.nvim_create_autocmd("VimLeavePre", {
+  group = global_group,
+  callback = function()
+    for path in pairs(redirects) do
+      pcall(vim.uv.fs_unlink, path)
+    end
+  end,
+})
 api.nvim_create_autocmd("ColorScheme", {
   group = global_group,
   callback = function()

@@ -8,6 +8,7 @@ local M = {}
 ---@field port integer
 ---@field is_previewed fun(bufnr: integer): boolean
 ---@field buf_dir fun(bufnr: integer): string|nil Directory the buffer's files are served from.
+---@field file_roots fun(dir: string): string[] Directories the files of `dir` may come from.
 ---@field on_subscribe fun(bufnr: integer) Handles a tab connecting to the buffer's preview.
 ---@field on_open_link fun(bufnr: integer, path: string): string|nil, string|nil Handles a clicked markdown link; returns the preview path of the opened file.
 ---@field on_jump fun(bufnr: integer, line: integer|nil): true|nil, string|nil Handles a double-clicked block; `line` is 0-based.
@@ -373,13 +374,23 @@ local function handle(sock, request)
   if b then
     -- Only for buffers being previewed, not every file open in Neovim.
     local dir = h.is_previewed(b) and h.buf_dir(b)
-    local full = dir and resolve(dir, file, { dir, vim.fn.getcwd() })
+    local full = dir and resolve(dir, file, h.file_roots(dir))
     -- PDFs cannot script this origin, and browsers refuse to show them sandboxed.
     local is_pdf = full and full:lower():match("%.pdf$")
     return serve_file(sock, full, { ["Content-Security-Policy"] = not is_pdf and file_policy or nil }, headers.range)
   end
 
   text(sock, "404 Not Found", "Not found")
+end
+
+-- Only an export POST that already carries the token may send a body. Anything
+-- else is answered without reading one, so a client that does not know the
+-- token cannot make Neovim buffer up to `max_body`.
+local function accepts_body(request)
+  if request.method ~= "POST" or not state.token then
+    return false
+  end
+  return (request.target or ""):match("^/(%x+)/") == state.token
 end
 
 local function parse_head(head)
@@ -433,7 +444,9 @@ local function on_connection(err)
       request = parse_head(data:sub(1, head_end))
       request.body_start = head_end + 4
       request.length = tonumber((request.headers["content-length"] or "0"):match("^%s*(%d+)%s*$"))
-      if not request.length then
+      if not accepts_body(request) then
+        request.length = 0
+      elseif not request.length then
         request.error = "400 Bad Request"
       elseif request.length > max_body then
         request.error = "413 Content Too Large"
@@ -459,10 +472,23 @@ local function on_connection(err)
       end
       local ok, e = pcall(handle, sock, request)
       if not ok then
-        text(sock, "500 Internal Server Error", tostring(e))
+        -- The message can name local paths, and a client without the token
+        -- reaches this too: it goes to Neovim, not into the response.
+        vim.notify("[mdlive] " .. tostring(e), vim.log.levels.ERROR)
+        text(sock, "500 Internal Server Error", "Internal error")
       end
     end)
   end)
+end
+
+--- Resolves `rel` against `dir` and returns the real path, or nil when it does
+--- not exist or leads outside every directory in `roots`.
+---@param dir string
+---@param rel string
+---@param roots string[]
+---@return string|nil
+function M.resolve(dir, rel, roots)
+  return resolve(dir, rel, roots)
 end
 
 --- Starts the server, or returns the port of the one already running.
