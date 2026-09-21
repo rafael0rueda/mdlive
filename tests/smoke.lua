@@ -520,6 +520,69 @@ local ok, err = xpcall(function()
   check("server stops after enable(false)", not require("mdlive.server").is_running())
   setup()
 
+  -- Starting a browser: the preview URL carries the token, so it is not put on
+  -- a command line, which every user on the machine can read.
+  local argv = sandbox .. "/browser-argv.txt"
+  local function browser_argument(extra)
+    vim.fn.delete(argv)
+    local command = { "sh", "-c", 'printf "%s" "$0" > ' .. argv }
+    setup(vim.tbl_extend("force", { browser = command }, extra or {}))
+    vim.cmd.buffer(buf)
+    vim.cmd("MdLive")
+    vim.wait(3000, function()
+      return vim.uv.fs_stat(argv) ~= nil
+    end, 20)
+    local argument = table.concat(vim.fn.readfile(argv), "")
+    require("mdlive").enable(false)
+    vim.wait(400)
+    return argument
+  end
+
+  local argument = browser_argument()
+  check("the browser is started on a file, not on the preview URL", argument:match("^file://") ~= nil, argument)
+  local redirect = vim.uri_to_fname(argument)
+  local redirect_stat = vim.uv.fs_stat(redirect)
+  check(
+    "only its owner can read the file holding the token",
+    redirect_stat and ("%o"):format(redirect_stat.mode % 512) == "600",
+    redirect_stat and ("%o"):format(redirect_stat.mode % 512)
+  )
+  local redirect_page = table.concat(vim.fn.readfile(redirect), "\n")
+  check(
+    "the file redirects to the preview",
+    redirect_page:match("http://127%.0%.0%.1:%d+/%x+/preview/%d+") ~= nil,
+    redirect_page
+  )
+  vim.api.nvim_exec_autocmds("VimLeavePre", { group = "mdlive" })
+  check("the redirect file is removed when Neovim quits", vim.uv.fs_stat(redirect) == nil)
+
+  local cache = vim.fs.joinpath(vim.fn.stdpath("cache"), "mdlive")
+  local before = #vim.fn.readdir(cache)
+  argument = browser_argument({ browser_redirect = false })
+  check(
+    "browser_redirect = false hands the browser the URL itself",
+    argument:match("^http://127%.0%.0%.1:%d+/%x+/preview/%d+$") ~= nil,
+    argument
+  )
+  check("browser_redirect = false writes no file holding the token", #vim.fn.readdir(cache) == before)
+
+  -- Writing the redirect must never keep the preview from opening: point the
+  -- cache at a path below a regular file, so the directory cannot be made.
+  local real_cache = vim.env.XDG_CACHE_HOME
+  vim.env.XDG_CACHE_HOME = notes .. "/index.md"
+  argument = browser_argument()
+  vim.env.XDG_CACHE_HOME = real_cache
+  check(
+    "falls back to the URL when the redirect cannot be written",
+    argument:match("^http://127%.0%.0%.1:%d+/%x+/preview/%d+$") ~= nil,
+    argument
+  )
+  setup()
+  vim.cmd("MdLive")
+  check("a browser function is still given the preview URL itself", (opened or ""):match("^http://") ~= nil, opened)
+  require("mdlive").enable(false)
+  vim.wait(400)
+
   -- The deprecated names still work and warn once each.
   local deprecation_messages = {}
   local real_notify_api = vim.notify

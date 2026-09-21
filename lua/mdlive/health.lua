@@ -83,6 +83,25 @@ local function check_server()
   end
 end
 
+-- The browser is started on a file that redirects to the preview, so the token
+-- stays out of the process list. A sandboxed browser cannot read that file, and
+-- Neovim only sees that it started, so say where the option is.
+local function check_redirect(command)
+  if not require("mdlive.config").options.browser_redirect then
+    return health.warn("Preview URLs are passed on the command line, where other users can read them", {
+      "Set `browser_redirect = true` in setup() unless your browser cannot open local files",
+    })
+  end
+  local sandboxed = command ~= nil and (command:find("/snap/", 1, true) or command:find("flatpak", 1, true))
+  if sandboxed then
+    health.warn(("`%s` looks sandboxed and may not be able to open the file it is started on"):format(command), {
+      "If the browser reports a missing file, set `browser_redirect = false` in setup()",
+    })
+  else
+    health.ok("Preview URLs are kept out of the process list")
+  end
+end
+
 local function check_browser()
   health.start("mdlive: browser")
   local browser = require("mdlive.config").options.browser
@@ -98,16 +117,19 @@ local function check_browser()
     else
       health.error("`" .. tostring(browser[1]) .. "` is not executable", { "Fix the `browser` option in setup()" })
     end
-    return
+    local command = vim.fn.exepath(browser[1])
+    return check_redirect(command ~= "" and command or browser[1])
   end
 
   -- Same lookup as vim.ui.open().
   if vim.fn.has("mac") == 1 or vim.fn.has("win32") == 1 then
-    return health.ok("Using the system default browser")
+    health.ok("Using the system default browser")
+    return check_redirect(nil)
   end
   for _, cmd in ipairs({ "xdg-open", "wslview", "explorer.exe", "lemonade" }) do
     if vim.fn.executable(cmd) == 1 then
-      return health.ok("Opening the system default browser with `" .. cmd .. "`")
+      health.ok("Opening the system default browser with `" .. cmd .. "`")
+      return check_redirect(nil)
     end
   end
   health.warn("No command found to open a browser (xdg-open, wslview, explorer.exe or lemonade)", {

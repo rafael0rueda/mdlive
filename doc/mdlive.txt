@@ -101,6 +101,7 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
       port = 0,
       file_root = nil,
       browser = nil,
+      browser_redirect = true,
       debounce_ms = 150,
       auto_open = false,
       filetypes = { "markdown" },
@@ -139,6 +140,19 @@ browser                                                *mdlive-config-browser*
     |vim.ui.open()|. A string such as `"firefox"` or a list such as
     `{ "firefox", "--new-window" }` is run with the URL appended. A function
     receives the URL.
+
+browser_redirect                              *mdlive-config-browser_redirect*
+    Type: `boolean`, default: `true`
+    Preview URLs contain a token, and the arguments a program is started with
+    are readable by every user on the machine (`/proc/<pid>/cmdline`). With
+    this on, the browser is started on a file that only you can read and that
+    redirects to the preview, so the token never appears in a process list.
+    The file is removed a few seconds later.
+
+    Turn it off if your browser is sandboxed (Snap, Flatpak) and cannot open
+    files outside its own directories: the symptom is a browser tab that says
+    the file does not exist. A `browser` function is never affected, because
+    it runs inside Neovim and starts no program.
 
 debounce_ms                                        *mdlive-config-debounce_ms*
     Type: `integer`, default: `150`
@@ -345,6 +359,10 @@ just cloned, so the preview treats it as untrusted:
   every request for the page, its events, files or actions needs it. Other
   users or programs on the machine cannot read your buffers or files through
   the server. Files are only served for buffers that are being previewed.
+- The URL, and with it the token, is not passed to the browser on a command
+  line, which every user on the machine can read: the browser is started on a
+  file only you can read that redirects to the preview. See
+  |mdlive-config-browser_redirect|.
 - A request that arrives without a token is answered without its body being
   read, so it cannot make Neovim hold on to a large one.
 - The server rejects requests with a non-local Host header. Requests that act
