@@ -99,6 +99,7 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
     require("mdlive").setup({
       host = "127.0.0.1",
       port = 0,
+      file_root = nil,
       browser = nil,
       debounce_ms = 150,
       auto_open = false,
@@ -121,6 +122,16 @@ host                                                      *mdlive-config-host*
 port                                                      *mdlive-config-port*
     Type: `integer`, default: `0`
     Port of the server. `0` picks a free port.
+
+file_root                                            *mdlive-config-file_root*
+    Type: `string`, default: `nil`
+    Besides the directory of the Markdown file itself, the preview may read
+    files under this directory, so that relative links such as
+    `../assets/logo.svg` work across a project. `nil` uses the working
+    directory, and only when the Markdown file is inside it: previewing
+    `/tmp/notes.md` from a Neovim started in `~` does not put your home
+    directory within reach. Links and files outside these directories are
+    refused, symlinks included.
 
 browser                                                *mdlive-config-browser*
     Type: `nil`, `string`, `string[]` or `fun(url: string)`, default: `nil`
@@ -324,12 +335,18 @@ just cloned, so the preview treats it as untrusted:
   the page uses for its own features are removed from it, so a web link
   cannot pose as a link that opens a file in Neovim.
 - Files are served only from the directory of the Markdown file and the
-  current working directory, in a sandbox that blocks scripts. Symlinks are
-  resolved first, so a link cannot point outside those directories.
+  project it is in, in a sandbox that blocks scripts. Symlinks are resolved
+  first, so neither a file the page fetches nor a link that opens a file in
+  Neovim can point outside those directories. The working directory counts as
+  the project only when the Markdown file is inside it, so previewing
+  /tmp/notes.md from a Neovim started in your home directory does not put it
+  within reach. See |mdlive-config-file_root|.
 - Preview URLs contain a random token, new each time the server starts, and
   every request for the page, its events, files or actions needs it. Other
   users or programs on the machine cannot read your buffers or files through
   the server. Files are only served for buffers that are being previewed.
+- A request that arrives without a token is answered without its body being
+  read, so it cannot make Neovim hold on to a large one.
 - The server rejects requests with a non-local Host header. Requests that act
   in Neovim (opening a linked file, moving the cursor, saving an export) must
   come from the preview page itself, so other websites cannot send them.

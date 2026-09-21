@@ -139,6 +139,22 @@ local function buf_dir(bufnr)
   return name ~= "" and vim.fs.dirname(vim.fn.fnamemodify(name, ":p")) or vim.fn.getcwd()
 end
 
+-- Directories the preview may read files from: the markdown file's own
+-- directory, plus the project it is in. The working directory counts as that
+-- project only when the file is inside it, so previewing /tmp/notes.md from a
+-- Neovim started in ~ does not put the whole home directory within reach.
+---@param dir string
+---@return string[]
+local function file_roots(dir)
+  local roots = { dir }
+  -- A `file_root` may be relative, or start with ~.
+  local root = vim.fs.normalize(vim.fn.fnamemodify(config.options.file_root or vim.fn.getcwd(), ":p"))
+  if root ~= dir and vim.fs.relpath(root, dir) then
+    roots[#roots + 1] = root
+  end
+  return roots
+end
+
 local function attach(bufnr)
   local group = api.nvim_create_augroup("mdlive.buf." .. bufnr, { clear = true })
   local timer = assert(vim.uv.new_timer())
@@ -192,7 +208,13 @@ local function open_link(from_buf, rel)
   if not dir or rel == "" then
     return nil, "invalid link"
   end
-  local path = vim.fs.normalize(vim.fs.joinpath(dir, rel))
+  -- Confined to the same directories as the files the preview may fetch, so a
+  -- link in an untrusted document cannot reach the rest of the filesystem.
+  local path = server.resolve(dir, rel, file_roots(dir))
+  if not path then
+    return nil, "file not found"
+  end
+  -- Checked after resolving: a symlink named .md must not open something else.
   if not markdown_ext[(path:match("%.(%w+)$") or ""):lower()] then
     return nil, "not a markdown file"
   end
@@ -319,6 +341,7 @@ local function start_server()
       return previews[bufnr] ~= nil
     end,
     buf_dir = buf_dir,
+    file_roots = file_roots,
     on_open_link = open_link,
     on_jump = jump,
     on_export = receive_export,
@@ -516,6 +539,8 @@ function M.export(bufnr, opts, callback)
     return fail(err)
   end
   vim.validate("opts", opts, "table", true)
+  vim.validate("opts.path", opts and opts.path, "string", true)
+  vim.validate("opts.force", opts and opts.force, "boolean", true)
   vim.validate("callback", callback, "function", true)
   bufnr = resolve_buf(bufnr)
   if not api.nvim_buf_is_valid(bufnr) then

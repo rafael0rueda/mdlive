@@ -2,6 +2,7 @@ local M = {}
 
 ---@class mdlive.Opts
 ---@field host? string Address the preview server binds to.
+---@field file_root? string Directory the preview may read files from; nil uses the working directory.
 ---@field port? integer Port of the server, 0 picks a free one.
 ---@field browser? string|string[]|fun(url: string) Opens the preview; nil uses the system default browser.
 ---@field debounce_ms? integer Milliseconds to wait after the last change before updating the preview.
@@ -14,6 +15,7 @@ local M = {}
 
 ---@class mdlive.Config
 ---@field host string
+---@field file_root? string
 ---@field port integer
 ---@field browser? string|string[]|fun(url: string)
 ---@field debounce_ms integer
@@ -30,6 +32,9 @@ M.defaults = {
   host = "127.0.0.1",
   -- 0 picks a free port automatically.
   port = 0,
+  -- Besides the markdown file's own directory, the preview may read files under
+  -- this one. nil uses the working directory, and only when the file is inside it.
+  file_root = nil,
   -- nil: system default (vim.ui.open). A string ("firefox"), a command list
   -- ({ "firefox", "--new-window" }) or a function(url) are also accepted.
   browser = nil,
@@ -53,6 +58,7 @@ M.defaults = {
 ---@type table<string, string[]>
 M.types = {
   host = { "string" },
+  file_root = { "string" },
   port = { "number" },
   browser = { "string", "table", "function" },
   debounce_ms = { "number" },
