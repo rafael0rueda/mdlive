@@ -150,11 +150,11 @@ for example a README in a repository you just cloned:
 a change includes.
 
 ```sh
-make check   # everything below
-make test    # tests/smoke.lua
-make browser # tests/browser.mjs
-make lint    # stylua --check (`make format` fixes it)
-make typecheck
+make check        # everything below
+make test         # tests/smoke.lua
+make browser      # tests/browser.mjs
+make lint         # stylua --check (`make format` fixes it)
+make typecheck    # Lua with lua-language-server, app/preview.js with TypeScript
 make helptags
 make vendor-check # app/vendor matches the pinned npm packages
 ```

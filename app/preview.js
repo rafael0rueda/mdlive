@@ -1,14 +1,15 @@
 (function () {
   "use strict";
 
-  // The page is at /<token>/preview/<bufnr>; every request to the server but
-  // the bundled /app files needs the token.
-  const pageMatch = location.pathname.match(/^(\/[0-9a-f]+)\/preview\/(\d+)/);
+  // The page is at /<token>/preview/<bufnr>, the only path it is served at;
+  // every request to the server but the bundled /app files needs the token.
+  const pageMatch = /** @type {RegExpMatchArray} */ (location.pathname.match(/^(\/[0-9a-f]+)\/preview\/(\d+)/));
   const session = pageMatch[1];
   let bufnr = pageMatch[2];
   const root = document.documentElement;
-  const contentEl = document.getElementById("content");
-  const statusEl = document.getElementById("status");
+  // Both are in index.html.
+  const contentEl = /** @type {HTMLElement} */ (document.getElementById("content"));
+  const statusEl = /** @type {HTMLElement} */ (document.getElementById("status"));
 
   let mode = systemMode();
   let cursor = null;
@@ -29,11 +30,12 @@
   }
 
   // A message shown for a few seconds; any status set after it cancels its timer.
-  let statusTimer = null;
+  /** @type {number | undefined} */
+  let statusTimer;
 
   function setStatus(message) {
     clearTimeout(statusTimer);
-    statusTimer = null;
+    statusTimer = undefined;
     statusEl.hidden = !message;
     statusEl.textContent = message || "";
   }
@@ -208,8 +210,8 @@
       link.rel = "noopener noreferrer";
       if (!isRelative(href)) continue;
 
-      // `s`: an href from raw HTML may hold a line break, and must still match.
-      const [, path, hash = ""] = /^([^?#]*)(?:\?[^#]*)?(#.*)?$/s.exec(href);
+      // Matches every string: `s` lets it match an href from raw HTML with a line break.
+      const [, path, hash = ""] = /** @type {RegExpExecArray} */ (/^([^?#]*)(?:\?[^#]*)?(#.*)?$/s.exec(href));
       if (!path) continue;
       // Local files are served raw (keeping fragments like #page=3 for PDFs);
       // markdown files are opened in Neovim on click.
@@ -431,9 +433,9 @@
   const renderedMath = new WeakSet();
 
   function renderMath() {
-    for (const el of contentEl.querySelectorAll(".math[data-tex]")) {
+    for (const el of /** @type {NodeListOf<HTMLElement>} */ (contentEl.querySelectorAll(".math[data-tex]"))) {
       if (renderedMath.has(el)) continue;
-      const { tex } = el.dataset;
+      const { tex = "" } = el.dataset;
       const displayMode = el.hasAttribute("data-display");
       el.innerHTML = mathCache(`${displayMode}\n${tex}`, () => {
         try {
@@ -499,8 +501,10 @@
 
   // ----------------------------------------------------------------- mermaid
 
+  /** @type {Promise<Mermaid> | null} */
   let mermaidLoad = null;
   let mermaidQueue = Promise.resolve();
+  /** @type {string | null} */
   let mermaidTheme = null;
   let diagramId = 0;
   const diagramCache = new Map(); // `${theme}\n${src}` -> html
@@ -510,7 +514,7 @@
     mermaidLoad ??= new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = "/app/vendor/mermaid.min.js";
-      script.onload = () => resolve(window.mermaid);
+      script.onload = () => (window.mermaid ? resolve(window.mermaid) : reject(new Error("Could not load mermaid")));
       script.onerror = () => reject(new Error("Could not load mermaid"));
       document.head.appendChild(script);
     });
@@ -523,7 +527,8 @@
 
   async function renderMermaid() {
     const theme = mode === "dark" ? "dark" : "default";
-    const pending = Array.from(contentEl.querySelectorAll(".mermaid-block")).filter(
+    const blocks = /** @type {NodeListOf<HTMLElement>} */ (contentEl.querySelectorAll(".mermaid-block"));
+    const pending = Array.from(blocks).filter(
       (block) => renderedDiagrams.get(block) !== `${theme}\n${block.dataset.src}`,
     );
     if (!pending.length) return;
@@ -572,13 +577,14 @@
   // Blocks sorted by their first source line (document order for equal lines),
   // rebuilt after each render. Footnotes are left out: they are rendered at the
   // end, away from where they are written.
+  /** @type {{ line: number, el: HTMLElement }[] | null} */
   let lineIndex = null;
 
   function lineBlocks() {
     if (!lineIndex) {
       const footnotes = new Set(contentEl.querySelectorAll(".footnotes [data-line]"));
       lineIndex = [];
-      for (const el of contentEl.querySelectorAll("[data-line]")) {
+      for (const el of /** @type {NodeListOf<HTMLElement>} */ (contentEl.querySelectorAll("[data-line]"))) {
         if (!footnotes.has(el)) lineIndex.push({ line: Number(el.dataset.line), el });
       }
       lineIndex.sort((a, b) => a.line - b.line);
@@ -673,15 +679,15 @@
   async function katexCss() {
     const css = await (await fetchOk("/app/vendor/katex/katex.min.css")).text();
     const files = new Set(Array.from(css.matchAll(/url\((fonts\/[^)]+\.woff2)\)/g), (m) => m[1]));
-    const urls = new Map(
-      await Promise.all(Array.from(files, async (file) => [file, await dataUrl(`/app/vendor/katex/${file}`)])),
-    );
+    /** @type {(file: string) => Promise<[string, string]>} */
+    const inline = async (file) => [file, await dataUrl(`/app/vendor/katex/${file}`)];
+    const urls = new Map(await Promise.all(Array.from(files, inline)));
     return css.replace(/src:url\((fonts\/[^)]+\.woff2)\)[^;}]*/g, (_, file) => `src:url(${urls.get(file)}) format("woff2")`);
   }
 
   // A standalone page: styles and fonts inlined, relative files resolved through `base`.
   async function standaloneHtml(base) {
-    const page = contentEl.cloneNode(true);
+    const page = /** @type {HTMLElement} */ (contentEl.cloneNode(true));
     // Rewriting these also keeps the token out of the exported file.
     const prefix = `${session}/files/${bufnr}/`;
     const local = (url) => (url.startsWith(prefix) ? base + url.slice(prefix.length) : url);
@@ -756,6 +762,7 @@
   async function post(path) {
     const response = await fetch(session + path, { method: "POST", headers: { "X-MdLive": "1" } });
     const body = await response.text();
+    /** @type {any} */
     let data = null;
     try {
       data = JSON.parse(body);
@@ -770,9 +777,10 @@
   let navigating = false;
 
   contentEl.addEventListener("click", async (event) => {
-    const copy = event.target.closest(".copy-code");
+    const target = /** @type {Element} */ (event.target);
+    const copy = target.closest(".copy-code");
     if (copy) {
-      const code = copy.parentElement.querySelector("pre > code").textContent;
+      const code = copy.parentElement?.querySelector("pre > code")?.textContent ?? "";
       try {
         await navigator.clipboard.writeText(code);
         copy.textContent = "Copied";
@@ -784,10 +792,10 @@
     }
 
     // Relative markdown links open the file in Neovim, then this tab follows it.
-    const link = event.target.closest("a[data-open-path]");
+    const link = /** @type {HTMLElement | null} */ (target.closest("a[data-open-path]"));
     if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    const { openPath, openHash } = link.dataset;
+    const { openPath = "", openHash = "" } = link.dataset;
     // Neovim changes buffer while handling this; don't also follow its "switch" event.
     navigating = true;
     try {
@@ -801,12 +809,13 @@
 
   // Double-clicking a block moves the Neovim cursor to its source line.
   contentEl.addEventListener("dblclick", async (event) => {
-    if (event.target.closest("a, button, input, summary")) return;
+    const target = /** @type {Element} */ (event.target);
+    if (target.closest("a, button, input, summary")) return;
     // A line number stands for the same line of the code next to it.
-    const gutter = event.target.closest(".line-numbers");
-    const block = gutter
-      ? gutter.parentElement.querySelector(":scope > code")
-      : event.target.closest("[data-source], [data-line]");
+    const gutter = target.closest(".line-numbers");
+    const block = /** @type {HTMLElement | null} */ (
+      gutter ? gutter.parentElement?.querySelector(":scope > code") : target.closest("[data-source], [data-line]")
+    );
     if (!block) return;
     const [first, last] = (block.dataset.source || `${block.dataset.line}-${Number(block.dataset.line) + 1}`)
       .split("-")
@@ -827,6 +836,7 @@
   // after a few failed attempts instead of retrying forever; a click on the
   // status message tries again.
   const maxAttempts = 5;
+  /** @type {(() => void) | null} */
   let retry = null;
 
   statusEl.addEventListener("click", () => retry?.());

@@ -5,10 +5,11 @@
 NVIM ?= nvim
 STYLUA_VERSION = 2.5.2
 LUALS_VERSION = 3.19.1
+TYPESCRIPT_VERSION = 7.0.2
 # Where `make tools` installs: $(TOOLS)/bin must be on PATH.
 TOOLS ?= $(HOME)/.local
 
-.PHONY: check test browser lint format typecheck helptags vendor vendor-check vendor-update tools release-notes
+.PHONY: check test browser lint format typecheck typecheck-lua typecheck-js helptags vendor vendor-check vendor-update tools release-notes
 
 check: test browser lint typecheck helptags vendor-check
 
@@ -26,11 +27,18 @@ lint:
 format:
 	stylua lua plugin tests
 
+typecheck: typecheck-lua typecheck-js
+
 # The Neovim runtime provides the types of the vim and vim.uv modules.
-typecheck:
+typecheck-lua:
 	VIMRUNTIME="$$($(NVIM) --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)" \
 	  lua-language-server --check "$(CURDIR)" --checklevel=Warning \
 	  --configpath "$(CURDIR)/.luarc.json" --check_format=pretty
+
+# app/preview.js, typed with JSDoc comments and types/vendor.d.ts (tsconfig.json).
+# npx downloads the pinned TypeScript once; nothing is installed in the repository.
+typecheck-js:
+	npx --yes --package typescript@$(TYPESCRIPT_VERSION) tsc -p tsconfig.json
 
 helptags:
 	$(NVIM) --headless --clean -c "try | helptags doc | catch | echo v:exception | cquit | endtry" -c "qa!"

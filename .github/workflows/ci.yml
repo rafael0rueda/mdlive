@@ -125,6 +125,11 @@ jobs:
           neovim: true
           version: stable
 
+      # For TypeScript, which checks app/preview.js.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       # The versions pinned in the Makefile.
       - name: Install stylua and lua-language-server
         run: |
@@ -132,7 +137,10 @@ jobs:
           echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
 
       - name: lua-language-server --check
-        run: make typecheck
+        run: make typecheck-lua
+
+      - name: tsc
+        run: make typecheck-js
 
   style:
     name: Stylua

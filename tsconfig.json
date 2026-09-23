@@ -1,0 +1,15 @@
+{
+  // Type checks app/preview.js, which stays plain JavaScript with no build
+  // step: `make typecheck` runs `tsc` on it. JSDoc comments carry the types.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "strictNullChecks": true,
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "files": ["app/preview.js", "types/vendor.d.ts"]
+}
