@@ -113,37 +113,63 @@ async function connect(url) {
   };
 }
 
+// Stops a Chrome and the helper processes in its process group.
+function stopChrome(proc) {
+  try {
+    process.kill(-proc.pid, "SIGKILL");
+  } catch (_) {
+    proc.kill("SIGKILL");
+  }
+}
+
+// Starts Chrome and waits for its DevTools endpoint. On a CI runner a cold
+// start now and then prints nothing for a long time, so a launch that stalls
+// is stopped and tried again, in a fresh profile, a few times.
+async function launchChrome(dir) {
+  for (let attempt = 1; ; attempt++) {
+    const proc = spawn(
+      findChrome(),
+      [
+        "--headless=new",
+        "--no-sandbox",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--hide-scrollbars",
+        "--remote-debugging-port=0",
+        `--user-data-dir=${join(dir, `chrome-${attempt}`)}`,
+        "about:blank",
+      ],
+      // Its own process group, so close() can stop the helper processes as well.
+      { stdio: ["ignore", "ignore", "pipe"], detached: true },
+    );
+    try {
+      const endpoint = await new Promise((resolve, reject) => {
+        let output = "";
+        const timer = setTimeout(() => reject(new Error(`Chrome did not start: ${output}`)), 15000);
+        proc.stderr.on("data", (chunk) => {
+          output += chunk;
+          const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
+          if (match) {
+            clearTimeout(timer);
+            resolve(match[1]);
+          }
+        });
+        proc.on("exit", (code) => reject(new Error(`Chrome exited with ${code}: ${output}`)));
+        proc.on("error", (err) => reject(new Error(`Could not start Chrome: ${err.message}`)));
+      });
+      return { proc, endpoint };
+    } catch (err) {
+      stopChrome(proc);
+      // A missing Chrome does not get better by trying again.
+      if (attempt === 3 || err.message.startsWith("Could not start Chrome")) throw err;
+      console.log(`Chrome did not start (attempt ${attempt} of 3), trying again`);
+    }
+  }
+}
+
 // Starts headless Chrome and returns its page: eval(), goto(), screenshot(), close().
 export async function startChrome({ dir, width = 1200, height = 800 }) {
-  const proc = spawn(
-    findChrome(),
-    [
-      "--headless=new",
-      "--no-sandbox",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--hide-scrollbars",
-      "--remote-debugging-port=0",
-      `--user-data-dir=${join(dir, "chrome")}`,
-      "about:blank",
-    ],
-    // Its own process group, so close() can stop the helper processes as well.
-    { stdio: ["ignore", "ignore", "pipe"], detached: true },
-  );
-  const endpoint = await new Promise((resolve, reject) => {
-    let output = "";
-    const timer = setTimeout(() => reject(new Error(`Chrome did not start: ${output}`)), 15000);
-    proc.stderr.on("data", (chunk) => {
-      output += chunk;
-      const match = output.match(/DevTools listening on (ws:\/\/\S+)/);
-      if (match) {
-        clearTimeout(timer);
-        resolve(match[1]);
-      }
-    });
-    proc.on("exit", (code) => reject(new Error(`Chrome exited with ${code}: ${output}`)));
-    proc.on("error", (err) => reject(new Error(`Could not start Chrome: ${err.message}`)));
-  });
+  const { proc, endpoint } = await launchChrome(dir);
 
   const { port } = new URL(endpoint);
   // The first page can join the target list a moment after DevTools starts listening.
