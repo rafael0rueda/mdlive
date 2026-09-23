@@ -11,9 +11,13 @@ libraries are bundled in `app/vendor`.
 - `plugin/mdlive.lua`: the commands and their `<Plug>(Name)` mappings. It
   stays small; everything goes through `require("mdlive")`.
 - `lua/mdlive/init.lua`: the public Lua API (`setup`, `enable`,
-  `is_enabled`, `export`), buffer autocmds, follow mode, opening the browser
-  and export jobs. Deprecated names (`open()`, ...) go through `deprecate()`
-  and are listed under `:help mdlive-deprecated`.
+  `is_enabled`, `export`), the previews and their buffer autocmds, and follow
+  mode. Deprecated names (`open()`, ...) go through `deprecate()` and are
+  listed under `:help mdlive-deprecated`.
+- `lua/mdlive/browser.lua`: opening the preview in a browser, through a
+  redirect file that keeps the token out of the process list.
+- `lua/mdlive/export.lua`: export jobs, from the file they write to until the
+  page a tab rendered for them is written.
 - `lua/mdlive/server.lua`: the HTTP/SSE server, the token, path resolution
   (`M.resolve()`, shared by `/files` and clicked links) and the CSP headers.
 - `lua/mdlive/config.lua`: the defaults and `M.types`, which is both the type

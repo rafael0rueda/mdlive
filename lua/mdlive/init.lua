@@ -1,4 +1,6 @@
+local browser = require("mdlive.browser")
 local config = require("mdlive.config")
+local export = require("mdlive.export")
 local server = require("mdlive.server")
 local theme = require("mdlive.theme")
 
@@ -16,21 +18,10 @@ local M = {}
 ---@field timer uv.uv_timer_t Debounces sending the buffer.
 ---@field tick? integer Changedtick last sent.
 
----@class (private) mdlive.ExportJob
----@field bufnr integer
----@field path string
----@field base string URL prefix that leads from the written file to the buffer's directory.
----@field sent? boolean
----@field callback? fun(err: string|nil, path: string|nil)
-
 ---@type table<integer, mdlive.Preview>
 local previews = {}
 ---@type integer|nil
 local active = nil -- follow mode: the buffer the preview tabs are showing
----@type table<integer, mdlive.ExportJob>
-local exports = {}
-local export_id = 0
-local export_timeout = 20000
 local api = vim.api
 
 local function notify(msg, level)
@@ -99,120 +90,6 @@ end
 -- Options the page renders with.
 local function send_settings(bufnr)
   server.broadcast(bufnr, "settings", { code_line_numbers = config.options.code_line_numbers })
-end
-
-local function send_exports(bufnr)
-  for id, job in pairs(exports) do
-    if job.bufnr == bufnr and not job.sent then
-      job.sent = true
-      server.broadcast(bufnr, "export", { id = id, base = job.base })
-    end
-  end
-end
-
--- The preview URL carries the token, and the arguments a program is started
--- with are readable by every user on the machine (/proc/<pid>/cmdline). The
--- browser is pointed at a file only you can read, which redirects to the
--- preview, so the token never appears in a process list.
-local redirect_ttl = 15000
----@type table<string, true>
-local redirects = {}
-
-local function drop_redirect(path)
-  redirects[path] = nil
-  vim.uv.fs_unlink(path, function() end)
-end
-
-local function escape_html(text)
-  return (
-    text:gsub("[&<>\"']", {
-      ["&"] = "&amp;",
-      ["<"] = "&lt;",
-      [">"] = "&gt;",
-      ['"'] = "&quot;",
-      ["'"] = "&#39;",
-    })
-  )
-end
-
---- Writes a page that redirects to `url`, and returns its file:// URI. Returns
---- nil when it cannot be written, so the caller falls back to the URL itself.
----@param url string
----@return string|nil
-local function redirect_file(url)
-  local dir = vim.fs.joinpath(vim.fn.stdpath("cache"), "mdlive")
-  -- mkdir() throws when the directory cannot be created, e.g. under a cache
-  -- directory that does not exist and cannot be made.
-  local created, result = pcall(vim.fn.mkdir, dir, "p")
-  if not created or result == 0 then
-    return nil
-  end
-  local name = assert(vim.uv.random(8)):gsub(".", function(c)
-    return ("%02x"):format(c:byte())
-  end)
-  local path = vim.fs.joinpath(dir, "open-" .. name .. ".html")
-  -- Created exclusively and readable only by its owner: another user on the
-  -- machine cannot read the token out of it.
-  local fd = vim.uv.fs_open(path, "wx", tonumber("600", 8))
-  if not fd then
-    return nil
-  end
-  local href = escape_html(url)
-  local page = ([[
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>mdlive</title>
-    <meta http-equiv="refresh" content="0; url=%s" />
-  </head>
-  <body>
-    <a href="%s">Open the mdlive preview</a>
-    <script>location.replace(%s)</script>
-  </body>
-</html>
-]]):format(href, href, vim.json.encode(url))
-  local written = vim.uv.fs_write(fd, page)
-  vim.uv.fs_close(fd)
-  if not written then
-    drop_redirect(path)
-    return nil
-  end
-  redirects[path] = true
-  vim.defer_fn(function()
-    drop_redirect(path)
-  end, redirect_ttl)
-  return vim.uri_from_fname(path)
-end
-
-local function open_browser(url)
-  local browser = config.options.browser
-  if type(browser) == "function" then
-    -- Runs inside Neovim: the URL is not passed to another program.
-    return browser(url)
-  end
-  -- Everything below starts a program with the URL in its arguments. Writing
-  -- the redirect must never keep the preview from opening: on any failure the
-  -- URL itself is used.
-  local target = url
-  if config.options.browser_redirect then
-    local ok, redirect = pcall(redirect_file, url)
-    target = (ok and redirect) or url
-  end
-  if type(browser) == "string" then
-    browser = { browser }
-  end
-  if type(browser) == "table" then
-    local ok, err = pcall(vim.system, vim.list_extend(vim.deepcopy(browser), { target }), { detach = true })
-    if not ok then
-      notify("could not start browser: " .. tostring(err), vim.log.levels.ERROR)
-    end
-    return
-  end
-  local _, err = vim.ui.open(target)
-  if err then
-    notify(err .. " (open " .. url .. " manually)", vim.log.levels.WARN)
-  end
 end
 
 local function buf_dir(bufnr)
@@ -351,75 +228,6 @@ local function jump(bufnr, line)
   return true
 end
 
--- Ends a pending export: shows the outcome and hands it to the caller's callback.
-local function finish_export(id, err)
-  local job = exports[id]
-  exports[id] = nil
-  if err then
-    notify(err, vim.log.levels.ERROR)
-  else
-    notify("exported to " .. vim.fn.fnamemodify(job.path, ":~:."))
-  end
-  if job.callback then
-    vim.schedule(function()
-      job.callback(err, job.path)
-    end)
-  end
-end
-
--- The browser sends back the rendered page of a pending export.
-local function receive_export(id, html, err)
-  local job = id and exports[id]
-  if not job then
-    return nil, "no export is waiting for this page"
-  end
-  if err or html == "" then
-    finish_export(id, "export failed: " .. (err or "the preview sent an empty page"))
-    return true
-  end
-  local file, err = io.open(job.path, "wb")
-  local ok = file ~= nil
-  if file then
-    -- A full disk can also make the final flush in close() fail.
-    local written, write_err = file:write(html)
-    local closed, close_err = file:close()
-    ok, err = written ~= nil and closed ~= nil, write_err or close_err
-  end
-  if not ok then
-    finish_export(id, "could not write " .. job.path .. ": " .. tostring(err))
-    return nil, "could not write the file"
-  end
-  finish_export(id)
-  return true
-end
-
-local function url_path(path)
-  return (path:gsub("[^%w%-%._~/]", function(c)
-    return ("%%%02X"):format(c:byte())
-  end))
-end
-
--- URL prefix that leads from directory `from` to directory `to`, such as "../docs/".
-local function relative_url(from, to)
-  local a = vim.split(vim.fs.normalize(from), "/", { trimempty = true })
-  local b = vim.split(vim.fs.normalize(to), "/", { trimempty = true })
-  if vim.fn.has("win32") == 1 and a[1] ~= b[1] then
-    return vim.uri_from_fname(to) .. "/" -- another drive
-  end
-  local common = 0
-  while common < #a and common < #b and a[common + 1] == b[common + 1] do
-    common = common + 1
-  end
-  local parts = {}
-  for _ = common + 1, #a do
-    parts[#parts + 1] = ".."
-  end
-  for i = common + 1, #b do
-    parts[#parts + 1] = b[i]
-  end
-  return #parts > 0 and url_path(table.concat(parts, "/")) .. "/" or ""
-end
-
 local function start_server()
   if server.is_running() then
     return true
@@ -434,13 +242,13 @@ local function start_server()
     file_roots = file_roots,
     on_open_link = open_link,
     on_jump = jump,
-    on_export = receive_export,
+    on_export = export.receive,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
       send_settings(bufnr)
       send_content(bufnr, true)
       send_view(bufnr)
-      send_exports(bufnr)
+      export.send(bufnr)
     end,
   })
   if not port then
@@ -532,7 +340,7 @@ local function start_preview(bufnr)
     notify("preview already open at " .. url)
     return true
   end
-  open_browser(url)
+  browser.open(url)
   notify("previewing at " .. url)
   return true
 end
@@ -636,51 +444,22 @@ function M.export(bufnr, opts, callback)
   if not api.nvim_buf_is_valid(bufnr) then
     return fail("invalid buffer " .. bufnr)
   end
-  opts = opts or {}
+  path, err = export.target(bufnr, opts or {})
+  if err then
+    return fail(err)
+  end
+  ---@cast path string
 
-  path = opts.path
-  if not path or path == "" then
-    local name = api.nvim_buf_get_name(bufnr)
-    if name == "" then
-      return fail("the buffer has no name, give a file: :MdLiveExport {file}")
-    end
-    path = vim.fn.fnamemodify(name, ":r") .. ".html"
-  end
-  path = vim.fn.fnamemodify(vim.fs.normalize(path), ":p")
-  local stat = vim.uv.fs_stat(path)
-  if stat and stat.type == "directory" then
-    return fail(path .. " is a directory")
-  end
-  if stat and not opts.force then
-    return fail(vim.fn.fnamemodify(path, ":~:.") .. " exists (add ! to overwrite)")
-  end
-  if vim.fn.isdirectory(vim.fs.dirname(path)) == 0 then
-    return fail("directory " .. vim.fs.dirname(path) .. " does not exist")
-  end
-
-  export_id = export_id + 1
-  local id = export_id
-  exports[id] = {
-    bufnr = bufnr,
-    path = path,
-    -- Relative images and links in the page must still work from where the file is written.
-    base = relative_url(vim.fs.dirname(path), buf_dir(bufnr)),
-    callback = callback,
-  }
-  vim.defer_fn(function()
-    if exports[id] then
-      finish_export(id, "export timed out: no preview tab answered")
-    end
-  end, export_timeout)
-
+  -- A valid buffer, checked above, always has a directory.
+  local id = export.add(bufnr, path, buf_dir(bufnr) --[[@as string]], callback)
   if previews[bufnr] and server.client_count(bufnr) > 0 then
-    send_exports(bufnr)
+    export.send(bufnr)
     return true
   end
   -- The export is sent once the tab connects.
   ok, err = start_preview(bufnr)
   if not ok then
-    exports[id] = nil
+    export.cancel(id)
     return fail(err)
   end
   return true
@@ -760,9 +539,7 @@ local global_group = api.nvim_create_augroup("mdlive", { clear = true })
 api.nvim_create_autocmd("VimLeavePre", {
   group = global_group,
   callback = function()
-    for path in pairs(redirects) do
-      pcall(vim.uv.fs_unlink, path)
-    end
+    browser.remove_redirects()
   end,
 })
 api.nvim_create_autocmd("ColorScheme", {
