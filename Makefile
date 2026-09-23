@@ -8,7 +8,7 @@ LUALS_VERSION = 3.19.1
 # Where `make tools` installs: $(TOOLS)/bin must be on PATH.
 TOOLS ?= $(HOME)/.local
 
-.PHONY: check test browser lint format typecheck helptags tools
+.PHONY: check test browser lint format typecheck helptags tools release-notes
 
 check: test browser lint typecheck helptags
 
@@ -46,3 +46,14 @@ tools:
 	ln -sf "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)/bin/lua-language-server" "$(TOOLS)/bin/lua-language-server"
 	"$(TOOLS)/bin/stylua" --version
 	"$(TOOLS)/bin/lua-language-server" --version
+
+# The CHANGELOG.md section of VERSION (make release-notes VERSION=0.1.0), which
+# the release workflow publishes as the release notes. Fails if it is missing.
+release-notes:
+	@test -n "$(VERSION)" || { echo "usage: make release-notes VERSION=x.y.z" >&2; exit 1; }
+	@awk -v v="$(VERSION)" ' \
+	  index($$0, "## [" v "]") == 1 { found = 1; next } \
+	  found && (/^## \[/ || /^\[[^]]*\]: /) { exit } \
+	  found && /^$$/ { if (printed) blank++; next } \
+	  found { while (blank) { print ""; blank-- } print; printed = 1 } \
+	  END { if (!found) { print "CHANGELOG.md has no section for " v > "/dev/stderr"; exit 1 } }' CHANGELOG.md
