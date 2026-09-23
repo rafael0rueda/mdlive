@@ -119,6 +119,7 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
       filetypes = { "markdown" },
       follow = true,
       scroll_sync = true,
+      scroll_editor = true,
       follow_theme = true,
       code_line_numbers = true,
       outline = false,
@@ -189,6 +190,11 @@ follow                                                  *mdlive-config-follow*
 scroll_sync                                        *mdlive-config-scroll_sync*
     Type: `boolean`, default: `true`
     Scrolls the preview to follow the cursor.
+
+scroll_editor                                    *mdlive-config-scroll_editor*
+    Type: `boolean`, default: `true`
+    With `scroll_sync`, scrolling the preview by hand scrolls the Neovim
+    window to the same place (see |mdlive-scroll-sync|).
 
 follow_theme                                      *mdlive-config-follow_theme*
     Type: `boolean`, default: `true`
@@ -345,6 +351,9 @@ Scroll sync                                               *mdlive-scroll-sync*
     The preview shows the same part of the document as the Neovim window
     and keeps the block under the cursor in view. Scrolling without moving
     the cursor, such as with CTRL-E or the mouse wheel, scrolls it too.
+    It works the other way as well: scrolling the preview by hand puts the
+    line at its top at the top of the Neovim window, and like CTRL-E, the
+    cursor only moves to stay in view (see |mdlive-config-scroll_editor|).
 
 Jump to source                                                   *mdlive-jump*
     Double-click a block in the preview to move the Neovim cursor to the
@@ -464,9 +473,9 @@ just cloned, so the preview treats it as untrusted:
 - A request that arrives without a token is answered without its body being
   read, so it cannot make Neovim hold on to a large one.
 - The server rejects requests with a non-local Host header. Requests that act
-  in Neovim (opening a linked file, moving the cursor, ticking a task, saving
-  an export) must come from the preview page itself, so other websites cannot
-  send them. Ticking a task changes only the `[ ]` or `[x]` of a line that is
+  in Neovim (opening a linked file, moving the cursor, scrolling the window,
+  ticking a task, saving an export) must come from the preview page itself,
+  so other websites cannot send them. Ticking a task changes only the `[ ]` or `[x]` of a line that is
   a task item in the buffer.
 - Exported HTML files include a Content-Security-Policy that blocks scripts
   wherever they are opened.

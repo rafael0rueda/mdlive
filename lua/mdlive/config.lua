@@ -11,6 +11,7 @@ local M = {}
 ---@field filetypes? string[] Filetypes used by `auto_open` and `follow`.
 ---@field follow? boolean Uses a single tab that follows the buffer you are in.
 ---@field scroll_sync? boolean Scrolls the preview to follow the cursor.
+---@field scroll_editor? boolean Scrolling the preview scrolls the Neovim window too (with `scroll_sync`).
 ---@field follow_theme? boolean Uses the colors of the current colorscheme in the preview.
 ---@field code_line_numbers? boolean Shows line numbers on code blocks with more than one line.
 ---@field outline? boolean Opens the outline of the headings when the preview opens.
@@ -27,6 +28,7 @@ local M = {}
 ---@field filetypes string[]
 ---@field follow boolean
 ---@field scroll_sync boolean
+---@field scroll_editor boolean
 ---@field follow_theme boolean
 ---@field code_line_numbers boolean
 ---@field outline boolean
@@ -60,6 +62,8 @@ M.defaults = {
   follow = true,
   -- Scroll the preview to follow the cursor.
   scroll_sync = true,
+  -- With scroll_sync, scrolling the preview scrolls the Neovim window too.
+  scroll_editor = true,
   -- Use the colors of the current Neovim colorscheme in the preview.
   follow_theme = true,
   -- Show line numbers on code blocks with more than one line.
@@ -85,6 +89,7 @@ M.types = {
   filetypes = { "table" },
   follow = { "boolean" },
   scroll_sync = { "boolean" },
+  scroll_editor = { "boolean" },
   follow_theme = { "boolean" },
   code_line_numbers = { "boolean" },
   outline = { "boolean" },

@@ -400,6 +400,34 @@ local ok, err = xpcall(function()
   check("jump needs the token", get("/jump/" .. buf .. "?line=1", same_origin) == 404)
   check("jump only takes line numbers", get(session .. "/jump/" .. buf .. "?line=inf", same_origin) == 404)
 
+  -- Scrolling the preview by hand scrolls the window; like CTRL-E, the cursor
+  -- only moves to stay in view.
+  local scroll = session .. "/scroll/" .. buf .. "?line="
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  code, body = get(scroll .. "30", same_origin)
+  local view = vim.fn.winsaveview()
+  check(
+    "scrolling the preview puts its top line at the top of the window",
+    code == 200 and view.topline == 31 and view.lnum >= 31,
+    { body = body, topline = view.topline, lnum = view.lnum }
+  )
+  vim.api.nvim_win_set_cursor(0, { 36, 0 })
+  get(scroll .. "32", same_origin)
+  view = vim.fn.winsaveview()
+  check(
+    "a cursor still in view stays where it is",
+    view.topline == 33 and view.lnum == 36,
+    { topline = view.topline, lnum = view.lnum }
+  )
+  check("scroll needs custom header", get(scroll .. "1", { "-X", "POST", "-H", "Origin: " .. base }) == 403)
+  check("scroll needs the token", get("/scroll/" .. buf .. "?line=1", same_origin) == 404)
+  setup({ scroll_editor = false })
+  check(
+    "scroll_editor = false leaves the window alone",
+    get(scroll .. "1", same_origin) == 404 and vim.fn.line("w0") == 33
+  )
+  setup()
+
   -- Clicking a task list checkbox ticks or clears its item in the buffer.
   local function buf_line(line)
     return vim.api.nvim_buf_get_lines(buf, line, line + 1, false)[1]

@@ -331,6 +331,29 @@ try {
     { before, cursor },
   );
 
+  // Scrolling the preview by hand scrolls the Neovim window to the same line,
+  // and the cursor events Neovim answers with do not pull the page back.
+  await nvim.keys("gg");
+  await waitFor(() => page.eval("scrollY === 0"));
+  const tableHeading = `Array.from(document.querySelectorAll("h2")).find((h) => h.textContent === "Table")`;
+  const tableHeadingLine = await page.eval(`Number(${tableHeading}.dataset.line)`);
+  await page.eval(`window.scrollTo(0, ${tableHeading}.getBoundingClientRect().top + scrollY)`);
+  const handY = await page.eval("scrollY");
+  const windowTop = await waitFor(async () => {
+    const top = await nvim.lua(`return vim.fn.line("w0")`);
+    return top > 1 && top;
+  });
+  check(
+    "scrolling the preview scrolls the Neovim window to the same line",
+    windowTop === tableHeadingLine + 1,
+    { windowTop, tableHeadingLine },
+  );
+  await sleep(1000);
+  check("the preview stays where it was scrolled", Math.abs((await page.eval("scrollY")) - handY) < 2, {
+    handY,
+    now: await page.eval("scrollY"),
+  });
+
   // Double-click and copy ----------------------------------------------------
 
   const fence = await nvim.lua(`return vim.fn.search("^" .. string.rep("\`", 3) .. "lua", "nw")`);
