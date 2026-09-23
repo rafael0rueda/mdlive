@@ -357,6 +357,14 @@ Markdown                                                     *mdlive-markdown*
     `$inline$` and `$$block$$` math is rendered with KaTeX, and ```mermaid
     code blocks are drawn as diagrams.
 
+Task lists                                                  *mdlive-tasks*
+    Click the checkbox of a task list item (`- [ ] todo`) to tick or clear
+    it: the `[ ]` or `[x]` changes in the buffer, as one change you can undo,
+    and the preview follows. If the line is no longer that task item, for
+    example after an edit the preview has not caught up with, or the buffer
+    is not 'modifiable', nothing changes and the preview says so. Exported
+    pages show the checkboxes without letting them be clicked.
+
 GitHub alerts                                                  *mdlive-alerts*
     A blockquote starting with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,
     `[!WARNING]` or `[!CAUTION]` is shown as an alert, colored with the
@@ -430,8 +438,10 @@ just cloned, so the preview treats it as untrusted:
 - A request that arrives without a token is answered without its body being
   read, so it cannot make Neovim hold on to a large one.
 - The server rejects requests with a non-local Host header. Requests that act
-  in Neovim (opening a linked file, moving the cursor, saving an export) must
-  come from the preview page itself, so other websites cannot send them.
+  in Neovim (opening a linked file, moving the cursor, ticking a task, saving
+  an export) must come from the preview page itself, so other websites cannot
+  send them. Ticking a task changes only the `[ ]` or `[x]` of a line that is
+  a task item in the buffer.
 - Exported HTML files include a Content-Security-Policy that blocks scripts
   wherever they are opened.
 

@@ -255,6 +255,10 @@ body {
   vertical-align: middle;
 }
 
+.markdown-body li.task-list-item input:not(:disabled) {
+  cursor: pointer;
+}
+
 .markdown-body img {
   max-width: 100%;
   background: transparent;

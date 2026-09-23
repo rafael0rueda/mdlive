@@ -7,6 +7,11 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Added
+
+- Task list checkboxes in the preview can be clicked: the `[ ]` or `[x]` of
+  the item changes in the buffer. See `:help mdlive-tasks`
+
 ## [0.2.0] - 2026-09-23
 
 ### Added
