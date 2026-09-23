@@ -156,6 +156,7 @@ make browser # tests/browser.mjs
 make lint    # stylua --check (`make format` fixes it)
 make typecheck
 make helptags
+make vendor-check # app/vendor matches the pinned npm packages
 ```
 
 `make tools` installs the stylua and lua-language-server versions CI uses
@@ -180,7 +181,9 @@ in `$VIMRUNTIME`.
 ### Bundled libraries
 
 The browser libraries in `app/vendor` keep their own licenses, included in
-`app/vendor/licenses`:
+`app/vendor/licenses`. The files are exactly what their npm packages contain;
+`scripts/vendor.json` pins each package, and `make vendor` downloads them
+again:
 
 | Library             | Version | License               |
 | ------------------- | ------- | --------------------- |
