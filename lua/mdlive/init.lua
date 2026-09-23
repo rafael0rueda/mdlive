@@ -95,6 +95,32 @@ local function send_settings(bufnr)
   })
 end
 
+-- The rules of the `css` file, read on every send so that an edited file is
+-- picked up. Returns "" and a message when it cannot be read.
+---@return string css
+---@return string|nil err
+local function read_css()
+  local path = config.css_path()
+  if not path then
+    return ""
+  end
+  local file, err = io.open(path, "r")
+  if not file then
+    return "", ("could not read the `css` file: %s"):format(err)
+  end
+  local css = file:read("*a") or ""
+  file:close()
+  return css
+end
+
+-- Sends the `css` rules to the buffer's tabs, or to every preview.
+local function send_style(bufnr)
+  local data = { css = (read_css()) }
+  for b in pairs(bufnr and { [bufnr] = true } or previews) do
+    server.broadcast(b, "style", data)
+  end
+end
+
 local function buf_dir(bufnr)
   if not api.nvim_buf_is_valid(bufnr) then
     return nil
@@ -307,6 +333,7 @@ local function start_server()
     on_export = export.receive,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
+      send_style(bufnr)
       send_settings(bufnr)
       send_content(bufnr, true)
       send_view(bufnr)
@@ -564,9 +591,26 @@ function M.setup(opts)
       end,
     })
   end
+  local _, css_err = read_css()
+  if css_err then
+    notify(css_err, vim.log.levels.WARN)
+  end
+  -- Saving the `css` file restyles the open previews.
+  local css_group = api.nvim_create_augroup("mdlive.css", { clear = true })
+  if config.options.css then
+    api.nvim_create_autocmd("BufWritePost", {
+      group = css_group,
+      callback = function(ev)
+        if next(previews) and vim.fn.fnamemodify(ev.match, ":p") == config.css_path() then
+          send_style()
+        end
+      end,
+    })
+  end
   -- Open previews pick up the new options.
   if next(previews) then
     send_theme()
+    send_style()
     for bufnr in pairs(previews) do
       send_settings(bufnr)
     end

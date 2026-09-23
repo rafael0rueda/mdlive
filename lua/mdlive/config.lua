@@ -14,6 +14,7 @@ local M = {}
 ---@field follow_theme? boolean Uses the colors of the current colorscheme in the preview.
 ---@field code_line_numbers? boolean Shows line numbers on code blocks with more than one line.
 ---@field outline? boolean Opens the outline of the headings when the preview opens.
+---@field css? string Stylesheet whose rules the preview adds after its own.
 
 ---@class mdlive.Config
 ---@field host string
@@ -29,6 +30,7 @@ local M = {}
 ---@field follow_theme boolean
 ---@field code_line_numbers boolean
 ---@field outline boolean
+---@field css? string
 
 ---@type mdlive.Config
 M.defaults = {
@@ -65,6 +67,9 @@ M.defaults = {
   -- Open the outline of the headings next to the preview. The button at the
   -- top left of the page opens and closes it either way.
   outline = false,
+  -- A stylesheet of your own, applied after the preview's styles and included
+  -- in exports. Saving it in Neovim restyles the open previews.
+  css = nil,
 }
 
 -- Accepted type(s) of every option; also the list of known options.
@@ -83,10 +88,19 @@ M.types = {
   follow_theme = { "boolean" },
   code_line_numbers = { "boolean" },
   outline = { "boolean" },
+  css = { "string" },
 }
 
 ---@type mdlive.Config
 M.options = vim.deepcopy(M.defaults)
+
+--- The `css` option as an absolute path (it may start with ~ or be relative),
+--- or nil when it is not set.
+---@return string|nil
+function M.css_path()
+  local css = M.options.css
+  return css and vim.fn.fnamemodify(vim.fs.normalize(css), ":p") or nil
+end
 
 -- What was wrong with the options last given to setup(); :checkhealth shows it too.
 ---@type string[]

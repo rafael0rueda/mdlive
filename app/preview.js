@@ -10,6 +10,8 @@
   // Both are in index.html.
   const contentEl = /** @type {HTMLElement} */ (document.getElementById("content"));
   const statusEl = /** @type {HTMLElement} */ (document.getElementById("status"));
+  // The rules of the `css` option, after the page's own so they win.
+  const userStyle = /** @type {HTMLStyleElement} */ (document.getElementById("user-style"));
 
   let mode = systemMode();
   let cursor = null;
@@ -858,6 +860,7 @@
     if (page.querySelector(".katex")) styles.push(await katexCss());
     styles.push(await (await fetchOk("/app/style.css")).text());
     styles.push(".markdown-body { padding-bottom: 32px; }");
+    if (userStyle.textContent) styles.push(userStyle.textContent);
 
     const escape = md.utils.escapeHtml;
     const heading = page.querySelector("h1");
@@ -872,7 +875,8 @@
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
       '<meta name="generator" content="mdlive" />',
       `<title>${escape(title)}</title>`,
-      `<style>\n${styles.join("\n")}\n</style>`,
+      // A </style> in the rules must not end the block early.
+      `<style>\n${styles.join("\n").replace(/<\/style/gi, "<\\/style")}\n</style>`,
       "</head>",
       "<body>",
       `<main class="markdown-body">\n${page.innerHTML}\n</main>`,
@@ -1025,6 +1029,7 @@
     let failures = 0;
 
     events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
+    events.addEventListener("style", (e) => (userStyle.textContent = JSON.parse(e.data).css));
     events.addEventListener("content", (e) => {
       const data = JSON.parse(e.data);
       documentName = data.name || "";

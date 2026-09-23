@@ -9,6 +9,8 @@ can change or remove features.
 
 ### Added
 
+- The `css` option adds a stylesheet of your own to the preview and to
+  exports. Saving it in Neovim restyles the open previews
 - Wiki links: `[[note]]`, `[[note#Heading]]`, `[[note|label]]` and
   `[[#Heading]]`. Clicking one opens the note in Neovim; when it is not next
   to the file, it is found by name under the directories the preview may

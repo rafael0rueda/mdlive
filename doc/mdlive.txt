@@ -122,6 +122,7 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
       follow_theme = true,
       code_line_numbers = true,
       outline = false,
+      css = nil,
     })
 <
 Unknown options and options of the wrong type are reported with a warning, and
@@ -206,6 +207,18 @@ outline                                                *mdlive-config-outline*
     |mdlive-outline|). The button at the top left of the page opens and
     closes it either way. Changing the option with |mdlive.setup()| opens
     or closes it in the tabs that are open.
+
+css                                                        *mdlive-config-css*
+    Type: `string`, default: `nil`
+    A stylesheet of your own, such as `"~/.config/mdlive.css"`. Its rules
+    come after the preview's styles, so they win, and exports include them.
+    Saving the file in Neovim restyles the open previews. `url()` in it
+    should be absolute or a `data:` URL: the file is not served, only its
+    text. The colors from your colorscheme are set on the `<html>` element,
+    so override them there with `!important`, for example: >css
+        .markdown-body { max-width: 700px; font-size: 18px; }
+        :root { --link: #d33682 !important; }
+<
 
 ==============================================================================
 6. LUA API                                                        *mdlive-api*
