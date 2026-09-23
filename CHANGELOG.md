@@ -7,6 +7,8 @@ can change or remove features.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-23
+
 ### Added
 
 - An outline of the document's headings, opened with the button at the top
@@ -80,6 +82,7 @@ Markdown files are treated as untrusted input:
 - `open()`, `close()`, `toggle()` and `is_open()` still work, warn once, and
   will be removed in 1.0. Use `enable()` and `is_enabled()`
 
-[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rafael0rueda/mdlive/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rafael0rueda/mdlive/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rafael0rueda/mdlive/releases/tag/v0.1.0
