@@ -49,6 +49,30 @@ jobs:
       - name: Browser tests
         run: make browser
 
+  vendor:
+    name: Vendored libraries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Check app/vendor against scripts/vendor.json
+        run: make vendor-check
+
+      # The committed files must be exactly what the pinned npm packages contain.
+      - name: Rebuild app/vendor from npm
+        run: |
+          make vendor
+          if [ -n "$(git status --porcelain -- app/vendor scripts/vendor.json)" ]; then
+            git status --short -- app/vendor scripts/vendor.json
+            echo "::error::app/vendor differs from the npm packages pinned in scripts/vendor.json"
+            exit 1
+          fi
+
   typecheck:
     name: Type check
     runs-on: ubuntu-latest

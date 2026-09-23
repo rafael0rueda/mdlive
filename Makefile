@@ -8,9 +8,9 @@ LUALS_VERSION = 3.19.1
 # Where `make tools` installs: $(TOOLS)/bin must be on PATH.
 TOOLS ?= $(HOME)/.local
 
-.PHONY: check test browser lint format typecheck helptags tools release-notes
+.PHONY: check test browser lint format typecheck helptags vendor vendor-check vendor-update tools release-notes
 
-check: test browser lint typecheck helptags
+check: test browser lint typecheck helptags vendor-check
 
 # Neovim side: the server, its security checks and the Lua API.
 test:
@@ -34,6 +34,18 @@ typecheck:
 
 helptags:
 	$(NVIM) --headless --clean -c "try | helptags doc | catch | echo v:exception | cquit | endtry" -c "qa!"
+
+# The browser libraries in app/vendor, from the npm packages pinned in
+# scripts/vendor.json. vendor-check needs no network; vendor downloads.
+vendor-check:
+	node scripts/vendor.mjs check
+
+vendor:
+	node scripts/vendor.mjs fetch
+
+# make vendor-update PACKAGE=dompurify VERSION=3.4.16
+vendor-update:
+	node scripts/vendor.mjs update "$(PACKAGE)" "$(VERSION)"
 
 tools:
 	mkdir -p "$(TOOLS)/bin" "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)"

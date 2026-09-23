@@ -28,6 +28,9 @@ libraries are bundled in `app/vendor`.
 - `tests/browser.mjs` and `tests/harness.mjs`: the page in headless Chrome
   against a real Neovim, with no npm packages.
 - `scripts/screenshot.mjs`: regenerates `docs/screenshot.png`.
+- `scripts/vendor.mjs` and `scripts/vendor.json`: the npm packages that
+  `app/vendor` comes from, pinned by version and integrity hash, and the
+  SHA-256 of every file they provide.
 
 ## Checks
 
@@ -41,6 +44,10 @@ the `Makefile`, not in the workflow.
 - `make lint` / `make format`: stylua
 - `make typecheck`: lua-language-server with the types in `$VIMRUNTIME`
 - `make helptags`: the help tags build without errors
+- `make vendor-check`: every file in `app/vendor` matches
+  `scripts/vendor.json`, and the README lists the bundled versions. It needs
+  no network; CI also rebuilds `app/vendor` from npm with `make vendor` and
+  fails if anything differs
 - `make tools`: installs the stylua and lua-language-server versions pinned
   in the `Makefile` into `~/.local/bin` (`TOOLS=/other/prefix` to change it);
   versions are bumped there and CI follows
@@ -68,9 +75,13 @@ than 0.11 need a fallback.
 - A change users notice gets a line in the `## [Unreleased]` section of
   `CHANGELOG.md`, under `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`
   or `Security`.
-- The libraries in `app/vendor` are not edited. When one is updated, its
-  version in the README table and its license in `app/vendor/licenses` are
-  updated too.
+- The libraries in `app/vendor` are not edited: they are exactly what their
+  npm packages contain, licenses included. To update one, run
+  `make vendor-update PACKAGE=<npm name> VERSION=<version>`, which pins the
+  version and its integrity hash in `scripts/vendor.json` and rewrites its
+  files, then update its version in the README's bundled libraries table.
+  A new library also needs an entry in `scripts/vendor.json` and a row in
+  that table.
 
 ## Security
 
