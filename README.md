@@ -25,7 +25,8 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Works offline: all browser libraries are bundled in `app/vendor`
 
 Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
-`:checkhealth mdlive` checks your setup.
+`:checkhealth mdlive` checks your setup. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Installation
 
@@ -34,16 +35,17 @@ Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
 ```lua
 {
   "rafael0rueda/mdlive",
+  version = "*", -- the latest release; remove it to follow main
   ft = "markdown",
   cmd = { "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveExport" },
   opts = {},
 }
 ```
 
-Without a plugin manager, clone the repository and add it to `runtimepath`:
+Without a plugin manager, clone the latest release and add it to `runtimepath`:
 
 ```sh
-git clone https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
+git clone --branch v0.1.0 https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
 ```
 
 ```lua
