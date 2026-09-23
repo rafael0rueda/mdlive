@@ -27,6 +27,8 @@ libraries are bundled in `app/vendor`.
 - `tests/smoke.lua`: the Neovim side (server, security checks, API, commands).
 - `tests/browser.mjs` and `tests/harness.mjs`: the page in headless Chrome
   against a real Neovim, with no npm packages.
+- `tsconfig.json` and `types/vendor.d.ts`: the type check of
+  `app/preview.js`, and the globals of the libraries it uses.
 - `scripts/screenshot.mjs`: regenerates `docs/screenshot.png`.
 - `scripts/vendor.mjs` and `scripts/vendor.json`: the npm packages that
   `app/vendor` comes from, pinned by version and integrity hash, and the
@@ -43,6 +45,9 @@ the `Makefile`, not in the workflow.
   (set `CHROME=/path/to/chrome` if it is not on `PATH`)
 - `make lint` / `make format`: stylua
 - `make typecheck`: lua-language-server with the types in `$VIMRUNTIME`
+  (`make typecheck-lua`), and TypeScript's checker on `app/preview.js`
+  (`make typecheck-js`, through `npx`, with the version pinned in the
+  `Makefile`)
 - `make helptags`: the help tags build without errors
 - `make vendor-check`: every file in `app/vendor` matches
   `scripts/vendor.json`, and the README lists the bundled versions. It needs
@@ -74,7 +79,11 @@ test, `windows` tells which platform it runs on.
 - Errors go back to Lua callers as `nil, err`; the commands report them with
   `vim.notify()`, prefixed with `[mdlive]`.
 - `app/preview.js` is plain JavaScript in one IIFE with `"use strict"`: no
-  build step, no modules, no npm.
+  build step, no modules, no npm. Its types come from JSDoc comments
+  (`/** @type {...} */`), and the check includes `strictNullChecks`: a value
+  that can be `null`, such as a regex match or a DOM lookup, is checked or
+  cast with a comment that says why it cannot be. A library global it starts
+  using is declared in `types/vendor.d.ts`.
 - A change users notice gets a line in the `## [Unreleased]` section of
   `CHANGELOG.md`, under `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`
   or `Security`.
