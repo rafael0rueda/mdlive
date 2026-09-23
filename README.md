@@ -20,6 +20,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Tables, heading anchors, footnotes, `:emoji:` shortcodes and
   relative images
 - GitHub alerts (`> [!NOTE]`, `[!TIP]`, `[!WARNING]`, ...) in your diagnostic colors
+- Your own stylesheet on top (`css`), applied again when you save it
 - Export the preview to a standalone HTML file with `:MdLiveExport`
 - Relative links: markdown files open in Neovim and the preview follows them;
   other files open in a new tab
@@ -107,6 +108,7 @@ require("mdlive").setup({
   follow_theme = true,  -- use the Neovim colorscheme in the preview
   code_line_numbers = true, -- line numbers on code blocks with more than one line
   outline = false,      -- open the outline of the headings (the ☰ button toggles it)
+  css = nil,            -- a stylesheet of your own, e.g. "~/.config/mdlive.css"
 })
 ```
 

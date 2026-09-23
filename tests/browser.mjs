@@ -2,7 +2,7 @@
 // Neovim. Run from the repository root with Node 22+ and Chrome or Chromium
 // (set CHROME=/path/to/chrome if it is not on PATH):
 //   node tests/browser.mjs
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { sleep, startChrome, startNeovim, tempDir, waitFor } from "./harness.mjs";
 
@@ -367,6 +367,17 @@ try {
     newline,
   );
 
+  // Custom CSS ---------------------------------------------------------------
+
+  // The comment tries to end the <style> block of an exported page early.
+  const cssFile = join(dir, "custom.css");
+  writeFileSync(cssFile, ".markdown-body { max-width: 610px; } /* </style><p id=\"escaped\"> */\n");
+  const setOptions = (extra) =>
+    nvim.lua(`require("mdlive").setup(vim.tbl_extend("force", require("mdlive.config").options, ${extra}))`);
+  await setOptions(`{ css = ${JSON.stringify(cssFile)} }`);
+  const styled = await waitFor(() => page.eval(`getComputedStyle(document.getElementById("content")).maxWidth === "610px"`));
+  check("the css option styles the preview", styled, await page.eval(`getComputedStyle(document.getElementById("content")).maxWidth`));
+
   // Export -------------------------------------------------------------------
 
   const exportPath = join(dir, "demo.html");
@@ -379,6 +390,14 @@ try {
   );
   check("the exported page does not contain the server token", html && !html.includes(token));
   check("the exported page has no outline", html && !html.includes('id="outline"'));
+  check(
+    "the exported page has the css option's rules, which cannot end its <style>",
+    html && html.includes("max-width: 610px") && !html.includes('</style><p id="escaped">'),
+  );
+  await nvim.lua(`local options = vim.deepcopy(require("mdlive.config").options)
+    options.css = nil
+    require("mdlive").setup(options)`);
+  await waitFor(() => page.eval(`getComputedStyle(document.getElementById("content")).maxWidth === "900px"`));
   check(
     "the exported task checkboxes cannot be clicked",
     html && html.includes('<input type="checkbox" disabled') && !html.includes("data-task"),

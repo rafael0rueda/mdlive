@@ -50,6 +50,14 @@ local function check_config()
   if #problems == 0 then
     health.ok("Options are valid")
   end
+  local css = require("mdlive.config").css_path()
+  if css then
+    if vim.fn.filereadable(css) == 1 then
+      health.ok("Using the styles in " .. css)
+    else
+      health.error("The `css` file cannot be read: " .. css, { "Fix the `css` option in setup()" })
+    end
+  end
 end
 
 local function check_server()

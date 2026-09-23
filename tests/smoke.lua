@@ -275,6 +275,39 @@ local ok, err = xpcall(function()
   )
   setup()
 
+  -- The `css` file is sent to open previews, again when it is saved in Neovim,
+  -- and a file that cannot be read is reported.
+  local css_file = vim.fs.normalize(vim.fn.tempname()) .. ".css"
+  vim.fn.writefile({ ".markdown-body { max-width: 600px; }" }, css_file)
+  local css_stream = curl(session .. "/events/" .. buf, { "-N" }, 1.5)
+  vim.wait(300)
+  setup({ css = css_file })
+  vim.cmd.split(css_file)
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { ".markdown-body { max-width: 700px; }" })
+  vim.cmd("silent write")
+  vim.cmd("close")
+  local _, css_events = css_stream()
+  local styles = {}
+  for json in css_events:gmatch("event: style\ndata: ([^\n]*)") do
+    table.insert(styles, vim.json.decode(json).css)
+  end
+  check(
+    "the css file is sent, and sent again when it is saved",
+    vim.tbl_contains(styles, ".markdown-body { max-width: 600px; }\n")
+      and styles[#styles] == ".markdown-body { max-width: 700px; }\n",
+    styles
+  )
+  warnings = {}
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(warnings, msg)
+  end
+  setup({ css = css_file .. ".missing" })
+  vim.notify = real_notify
+  check("a css file that cannot be read is reported", table.concat(warnings):find("`css` file", 1, true), warnings)
+  setup()
+  vim.fn.delete(css_file)
+
   local theme = events:match("event: theme\ndata: ([^\n]*)")
   local decoded = theme and vim.json.decode(theme)
   check("theme has colors", decoded and decoded.vars and decoded.vars.fg and decoded.mode, theme)
