@@ -89,7 +89,10 @@ end
 
 -- Options the page renders with.
 local function send_settings(bufnr)
-  server.broadcast(bufnr, "settings", { code_line_numbers = config.options.code_line_numbers })
+  server.broadcast(bufnr, "settings", {
+    code_line_numbers = config.options.code_line_numbers,
+    outline = config.options.outline,
+  })
 end
 
 local function buf_dir(bufnr)

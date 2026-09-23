@@ -110,6 +110,7 @@ Pass options to |mdlive.setup()|. These are the defaults: >lua
       scroll_sync = true,
       follow_theme = true,
       code_line_numbers = true,
+      outline = false,
     })
 <
 Unknown options and options of the wrong type are reported with a warning, and
@@ -185,6 +186,13 @@ code_line_numbers                            *mdlive-config-code_line_numbers*
     Shows line numbers on code blocks with more than one line. They are left
     out when copying the code and when printing. Double-click a number to
     move the cursor to that line.
+
+outline                                                *mdlive-config-outline*
+    Type: `boolean`, default: `false`
+    Opens the outline of the headings when the preview opens (see
+    |mdlive-outline|). The button at the top left of the page opens and
+    closes it either way. Changing the option with |mdlive.setup()| opens
+    or closes it in the tabs that are open.
 
 ==============================================================================
 6. LUA API                                                        *mdlive-api*
@@ -301,6 +309,14 @@ Scroll sync                                               *mdlive-scroll-sync*
 Jump to source                                                   *mdlive-jump*
     Double-click a block in the preview to move the Neovim cursor to the
     line it comes from.
+
+Outline                                                       *mdlive-outline*
+    The button at the top left of the preview opens the outline: the
+    headings of the document, indented by level, with the section at the
+    top of the window marked. Click one to scroll to it. In a wide window
+    the outline is shown next to the text, in a narrow one over it, and it
+    closes after a click. It is left out of exports and printouts. See
+    |mdlive-config-outline| to open it from the start.
 
 Theme                                                           *mdlive-theme*
     Colors come from highlight groups such as |hl-Normal|, `@markup.heading`,

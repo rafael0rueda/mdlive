@@ -211,10 +211,21 @@ local ok, err = xpcall(function()
   check("MdLive opens a tab again once it is closed", opened ~= nil)
 
   check("stream sends theme", events:find("event: theme", 1, true))
+  -- The options the page renders with, from the last settings event in `stream`.
+  local function settings_of(stream)
+    local data
+    for json in stream:gmatch("event: settings\ndata: ([^\n]*)") do
+      data = vim.json.decode(json)
+    end
+    return data
+  end
+  local sent = settings_of(events)
   check(
     "stream sends settings before content",
-    (events:find('event: settings\ndata: {"code_line_numbers":true}', 1, true) or math.huge)
-      < (events:find("event: content", 1, true) or 0),
+    sent
+      and sent.code_line_numbers == true
+      and sent.outline == false
+      and events:find("event: settings", 1, true) < (events:find("event: content", 1, true) or 0),
     events:match("event: settings\ndata: [^\n]*")
   )
   check("stream sends initial content", events:find("# mdlive demo", 1, true))
@@ -245,12 +256,13 @@ local ok, err = xpcall(function()
   vim.notify = function(msg)
     table.insert(warnings, msg)
   end
-  setup({ code_line_numbers = false, port = "8080", colour = true })
+  setup({ code_line_numbers = false, outline = true, port = "8080", colour = true })
   vim.notify = real_notify
   local _, settings_events = settings_stream()
+  sent = settings_of(settings_events)
   check(
     "setup() sends new options to open previews",
-    settings_events:find('event: settings\ndata: {"code_line_numbers":false}', 1, true),
+    sent and sent.code_line_numbers == false and sent.outline == true,
     settings_events:match("event: settings\ndata: [^\n]*")
   )
   local warning = table.concat(warnings, "\n")
