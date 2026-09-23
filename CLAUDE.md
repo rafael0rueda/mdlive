@@ -31,16 +31,18 @@ markdown-it. No runtime dependencies: the browser libraries are bundled in
 
 ## Checks
 
-Run all of them before pushing; CI (`.github/workflows/ci.yml`) runs the same.
+`make check` runs all of them; run it before pushing. CI
+(`.github/workflows/ci.yml`) calls the same targets, so change a check in the
+`Makefile`, not in the workflow.
 
-```sh
-nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
-node tests/browser.mjs      # Node 22+, finds chromium-browser on PATH (or set CHROME)
-stylua --check lua plugin tests      # stylua 2.5.2
-VIMRUNTIME="$(nvim --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)" \
-  lua-language-server --check . --checklevel=Warning --configpath .luarc.json   # 3.19.1
-nvim --headless --clean -c "helptags doc" -c "qa!"   # help tags build without errors
-```
+- `make test`: `tests/smoke.lua` in headless Neovim
+- `make browser`: `tests/browser.mjs`, needs Node 22+ and Chrome or Chromium
+  (`chromium-browser` is found on PATH; otherwise set `CHROME`)
+- `make lint` / `make format`: stylua
+- `make typecheck`: lua-language-server with the types in `$VIMRUNTIME`
+- `make helptags`: the help tags build without errors
+- `make tools`: installs the stylua and lua-language-server versions pinned
+  in the `Makefile` into `~/.local/bin`; bump them there, CI follows
 
 CI runs the smoke test on Neovim v0.11.0, stable and nightly, so don't use
 APIs newer than 0.11 without a fallback.

@@ -24,10 +24,10 @@ jobs:
           version: ${{ matrix.neovim }}
 
       - name: Smoke test
-        run: nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
+        run: make test
 
       - name: Help tags
-        run: nvim --headless --clean -c "try | helptags doc | catch | echo v:exception | cquit | endtry" -c "qa!"
+        run: make helptags
 
   browser:
     name: Browser tests
@@ -47,14 +47,12 @@ jobs:
 
       # The runner image comes with Google Chrome.
       - name: Browser tests
-        run: node tests/browser.mjs
+        run: make browser
 
   typecheck:
     name: Type check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      LUALS_VERSION: 3.19.1
     steps:
       - uses: actions/checkout@v7
 
@@ -64,17 +62,14 @@ jobs:
           neovim: true
           version: stable
 
-      - name: Install lua-language-server
+      # The versions pinned in the Makefile.
+      - name: Install stylua and lua-language-server
         run: |
-          mkdir -p "$RUNNER_TEMP/luals"
-          curl -sSL "https://github.com/LuaLS/lua-language-server/releases/download/$LUALS_VERSION/lua-language-server-$LUALS_VERSION-linux-x64.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP/luals"
-          echo "$RUNNER_TEMP/luals/bin" >> "$GITHUB_PATH"
+          make tools TOOLS="$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
 
       - name: lua-language-server --check
-        run: |
-          export VIMRUNTIME="$(nvim --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)"
-          lua-language-server --check "$PWD" --checklevel=Warning --configpath "$PWD/.luarc.json" --check_format=pretty
+        run: make typecheck
 
   style:
     name: Stylua
@@ -82,8 +77,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: JohnnyMorganz/stylua-action@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: 2.5.2
-          args: --check lua plugin tests
+      # The versions pinned in the Makefile.
+      - name: Install stylua and lua-language-server
+        run: |
+          make tools TOOLS="$RUNNER_TEMP/tools"
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
+
+      - name: stylua --check
+        run: make lint
