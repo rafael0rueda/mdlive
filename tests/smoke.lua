@@ -138,6 +138,14 @@ local ok, err = xpcall(function()
   check("file_root opens up the directory it names", get(notes_files .. "/../secrets/key.txt") == 200)
   setup()
   check("the files are out of reach again without file_root", get(notes_files .. "/../secrets/key.txt") == 404)
+  -- Buffer names have their symlinks resolved, and a `file_root` under a
+  -- symlink (such as /tmp on macOS) still has to contain them.
+  local sandbox_link = sandbox .. "-link"
+  assert(vim.uv.fs_symlink(sandbox, sandbox_link, { dir = true }))
+  setup({ file_root = sandbox_link })
+  check("file_root may be reached through a symlink", get(notes_files .. "/../secrets/key.txt") == 200)
+  setup()
+  vim.uv.fs_unlink(sandbox_link)
 
   -- Files are streamed in chunks, and Range requests get part of them.
   local big = ("0123456789abcdef"):rep(384 * 1024) -- 6 MiB
