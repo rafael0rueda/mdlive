@@ -7,6 +7,8 @@ can change or remove features.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-23
+
 ### Fixed
 
 - A `file_root` reached through a symlink, such as a directory in `/tmp` on
@@ -68,5 +70,6 @@ Markdown files are treated as untrusted input:
 - `open()`, `close()`, `toggle()` and `is_open()` still work, warn once, and
   will be removed in 1.0. Use `enable()` and `is_enabled()`
 
-[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/rafael0rueda/mdlive/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rafael0rueda/mdlive/releases/tag/v0.1.0
