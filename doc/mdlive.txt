@@ -64,6 +64,14 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
 :MdLiveToggle                                                  *:MdLiveToggle*
     Starts or stops the preview of the current buffer.
 
+:MdLiveUrl                                                        *:MdLiveUrl*
+    Shows the URL of the preview of the current buffer, or in a buffer
+    without a preview the one |mdlive-follow| is showing, and copies it to
+    the |quoteplus| register when a |clipboard| is available. Open it in any
+    browser, for example after starting Neovim with `browser = false` on
+    another machine (see |mdlive-remote|). The URL gives access to the
+    preview, like a password, and changes each time the server starts.
+
 :MdLiveExport[!] [file]                                        *:MdLiveExport*
     Writes the preview of the current buffer to a standalone HTML file, with
     styles, fonts and diagrams included. [file] defaults to the buffer's
@@ -85,6 +93,9 @@ to your own keys.
 
 <Plug>(MdLiveToggle)                                    *<Plug>(MdLiveToggle)*
     Same as |:MdLiveToggle|.
+
+<Plug>(MdLiveUrl)                                          *<Plug>(MdLiveUrl)*
+    Same as |:MdLiveUrl|.
 
 <Plug>(MdLiveExport)                                    *<Plug>(MdLiveExport)*
     Same as |:MdLiveExport| without [file] or [!].
@@ -137,11 +148,13 @@ file_root                                            *mdlive-config-file_root*
     refused, symlinks included.
 
 browser                                                *mdlive-config-browser*
-    Type: `nil`, `string`, `string[]` or `fun(url: string)`, default: `nil`
+    Type: `nil`, `string`, `string[]`, `fun(url: string)` or `false`,
+    default: `nil`
     Opens the preview. `nil` uses the system default browser through
     |vim.ui.open()|. A string such as `"firefox"` or a list such as
     `{ "firefox", "--new-window" }` is run with the URL appended. A function
-    receives the URL.
+    receives the URL. `false` opens nothing: |:MdLive| and |:MdLiveUrl| show
+    the URL to open yourself, for example over SSH (see |mdlive-remote|).
 
 browser_redirect                              *mdlive-config-browser_redirect*
     Type: `boolean`, default: `true`
@@ -239,6 +252,20 @@ mdlive.is_enabled({filter}?)                             *mdlive.is_enabled()*
 
     Return: ~
         (`boolean`)
+
+mdlive.url({filter}?)                                           *mdlive.url()*
+    Returns the URL of a buffer's preview, as |:MdLiveUrl| shows it. The URL
+    gives access to the preview and changes each time the server starts.
+
+    Parameters: ~
+      - {filter}?  (`table`) With the field:
+                   - {buf}? (`integer`) Buffer, `0` for the current one.
+                     Without it, the current buffer or, if it has no
+                     preview, the one |mdlive-follow| is showing.
+
+    Return (multiple): ~
+        (`string?`) The URL.
+        (`string?`) Error message when the buffer has no preview.
 
 mdlive.export({bufnr}?, {opts}?, {callback}?)                *mdlive.export()*
     Same as |:MdLiveExport| for {bufnr}. The browser renders the page, so
@@ -354,6 +381,26 @@ Export                                                         *mdlive-export*
     and links are rewritten to work from where the file is saved. For a
     PDF, print the preview from the browser; the copy buttons and status
     messages are left out of the printout.
+
+Remote use                                                     *mdlive-remote*
+    When Neovim runs on another machine, over SSH, the preview can open in
+    the browser of the machine you connect from. The server keeps listening
+    on 127.0.0.1 of the remote machine, and SSH forwards the port:
+
+    1. On the remote machine, give the server a fixed port and open no
+       browser there: >lua
+           require("mdlive").setup({ port = 8090, browser = false })
+<
+    2. Connect with the port forwarded; the local port may differ: >sh
+           ssh -L 8090:127.0.0.1:8090 user@host
+<
+    3. Run |:MdLive|, then |:MdLiveUrl|. Open the URL in your local browser.
+       In a terminal that supports OSC 52, the URL is already in your
+       local clipboard (see |clipboard-osc52|).
+
+    Keep `host` on 127.0.0.1: another address would serve the preview to the
+    network over plain HTTP. Clicking a link to a Markdown file and
+    double-clicking a block still act in the remote Neovim.
 
 ==============================================================================
 8. SECURITY                                                  *mdlive-security*

@@ -80,6 +80,8 @@ local ok, err = xpcall(function()
     get(session .. "/files/" .. buf .. "/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd") == 404
   )
   check("rejects foreign Host header", get("/app/preview.js", { "-H", "Host: evil.example" }) == 403)
+  -- Through an SSH tunnel, the browser names its own end, on any port.
+  check("accepts a forwarded local Host header", get("/app/preview.js", { "-H", "Host: localhost:9" }) == 200)
 
   -- Everything but the bundled /app files needs the token of this server start.
   check("page needs the token", get("/preview/" .. buf) == 404)
@@ -534,7 +536,7 @@ local ok, err = xpcall(function()
   check("MdLiveToggle starts the preview", mdlive.is_enabled({ buf = guide }))
   vim.cmd("MdLiveToggle")
   check("MdLiveToggle stops the preview", not mdlive.is_enabled({ buf = guide }) and mdlive.is_enabled({ buf = buf }))
-  for _, name in ipairs({ "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveExport" }) do
+  for _, name in ipairs({ "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveUrl", "MdLiveExport" }) do
     local rhs = vim.fn.maparg("<Plug>(" .. name .. ")", "n")
     check("<Plug>(" .. name .. ") runs :" .. name, rhs == "<Cmd>" .. name .. "<CR>", rhs)
   end
@@ -611,6 +613,76 @@ local ok, err = xpcall(function()
   check("a browser function is still given the preview URL itself", (opened or ""):match("^http://") ~= nil, opened)
   require("mdlive").enable(false)
   vim.wait(400)
+
+  -- Remote use: browser = false opens nothing, and :MdLiveUrl shows the URL
+  -- and copies it through the clipboard provider.
+  local real_open = vim.ui.open
+  local ui_opened
+  ---@diagnostic disable-next-line: duplicate-set-field -- record instead of opening
+  vim.ui.open = function(target)
+    ui_opened = target
+    return nil, nil
+  end
+  setup({ browser = false })
+  opened = nil
+  vim.cmd.buffer(buf)
+  vim.cmd("MdLive")
+  vim.ui.open = real_open
+  check(
+    "browser = false starts the preview and opens nothing",
+    mdlive.is_enabled({ buf = buf }) and opened == nil and ui_opened == nil,
+    ui_opened
+  )
+  local preview_url = require("mdlive.server").url(buf)
+  check("url() returns the preview URL", mdlive.url() == preview_url and mdlive.url({ buf = buf }) == preview_url)
+  local no_url, no_url_err = mdlive.url({ buf = guide })
+  check("url() fails for a buffer without a preview", no_url == nil and no_url_err ~= nil, no_url_err)
+  vim.cmd.buffer(guide)
+  check("url() falls back to the followed preview", mdlive.url() == preview_url, mdlive.url())
+
+  local copied
+  vim.g.clipboard = {
+    name = "smoke test",
+    copy = {
+      ["+"] = function(lines)
+        copied = table.concat(lines, "\n")
+      end,
+      ["*"] = function() end,
+    },
+    paste = {
+      ["+"] = function()
+        return {}
+      end,
+      ["*"] = function()
+        return {}
+      end,
+    },
+  }
+  local url_messages = {}
+  local real_url_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(url_messages, msg)
+  end
+  vim.cmd("MdLiveUrl")
+  local shown = table.concat(url_messages, "\n")
+  check(
+    ":MdLiveUrl shows the URL and copies it to the clipboard",
+    shown:find(preview_url, 1, true) and copied == preview_url,
+    { shown = shown, copied = copied }
+  )
+  require("mdlive").enable(false)
+  vim.wait(400)
+  url_messages = {}
+  vim.cmd("MdLiveUrl")
+  vim.notify = real_url_notify
+  check(
+    ":MdLiveUrl reports a buffer without a preview",
+    table.concat(url_messages):find("no preview", 1, true),
+    url_messages
+  )
+  vim.g.clipboard = nil
+  setup()
 
   -- The deprecated names still work and warn once each.
   local deprecation_messages = {}

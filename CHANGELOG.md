@@ -12,6 +12,10 @@ can change or remove features.
 - An outline of the document's headings, opened with the button at the top
   left of the preview. It marks the section at the top of the window, and a
   click scrolls to a heading. The `outline` option opens it from the start
+- `browser = false` starts the preview without opening a browser, and
+  `:MdLiveUrl` (with `<Plug>(MdLiveUrl)` and `mdlive.url()`) shows its URL
+  and copies it to the clipboard. With a forwarded port, this previews in
+  your local browser while Neovim runs over SSH: see `:help mdlive-remote`
 
 ## [0.1.1] - 2026-09-23
 
