@@ -18,6 +18,12 @@ can change or remove features.
 - Task list checkboxes in the preview can be clicked: the `[ ]` or `[x]` of
   the item changes in the buffer. See `:help mdlive-tasks`
 
+### Changed
+
+- Mermaid diagrams use the colors of the preview, from your colorscheme and
+  the `css` option, instead of Mermaid's own light and dark themes, and are
+  drawn again when those colors change
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

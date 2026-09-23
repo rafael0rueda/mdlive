@@ -361,7 +361,9 @@ Outline                                                       *mdlive-outline*
 Theme                                                           *mdlive-theme*
     Colors come from highlight groups such as |hl-Normal|, `@markup.heading`,
     `@keyword`, `@string` and `@comment`, and are sent again when the
-    colorscheme or 'background' changes.
+    colorscheme or 'background' changes. Mermaid diagrams are drawn in the
+    same colors, including any that |mdlive-config-css| sets, and are drawn
+    again when they change.
 
 Markdown                                                     *mdlive-markdown*
     CommonMark with tables, strikethrough, task lists, heading anchors,
