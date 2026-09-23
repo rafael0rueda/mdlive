@@ -120,6 +120,10 @@ which the smoke and browser tests cover:
   has a CSP that blocks scripts.
 - Error responses to the browser don't include Lua messages or local paths.
 
+Please report a vulnerability privately, through GitHub's
+[security advisories](https://github.com/rafael0rueda/mdlive/security/advisories/new),
+instead of opening a public issue.
+
 ## Pull requests
 
 - Branch off `main` with one topic per branch, and open the pull request
