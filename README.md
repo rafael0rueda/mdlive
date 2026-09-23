@@ -144,6 +144,9 @@ for example a README in a repository you just cloned:
 
 ## Tests
 
+[CONTRIBUTING.md](CONTRIBUTING.md) describes the layout, the checks and what
+a change includes.
+
 ```sh
 make check   # everything below
 make test    # tests/smoke.lua
