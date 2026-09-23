@@ -352,6 +352,56 @@ local ok, err = xpcall(function()
   check("jump needs the token", get("/jump/" .. buf .. "?line=1", same_origin) == 404)
   check("jump only takes line numbers", get(session .. "/jump/" .. buf .. "?line=inf", same_origin) == 404)
 
+  -- Clicking a task list checkbox ticks or clears its item in the buffer.
+  local function buf_line(line)
+    return vim.api.nvim_buf_get_lines(buf, line, line + 1, false)[1]
+  end
+  local task_line
+  for i, text in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if text == "- [ ] Something still to do" then
+      task_line = i - 1
+    end
+  end
+  local task = session .. "/task/" .. buf .. "?line=" .. tostring(task_line)
+  code, body = get(task .. "&checked=1", same_origin)
+  check("a task checkbox ticks its item", code == 200 and buf_line(task_line) == "- [x] Something still to do", body)
+  check("a task already ticked in the buffer is refused", get(task .. "&checked=1", same_origin) == 404)
+  code, body = get(task .. "&checked=0", same_origin)
+  check("a task checkbox clears its item", code == 200 and buf_line(task_line) == "- [ ] Something still to do", body)
+  local first_line = buf_line(0)
+  check(
+    "a line that is not a task item is refused",
+    get(session .. "/task/" .. buf .. "?line=0&checked=1", same_origin) == 404 and buf_line(0) == first_line
+  )
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "", "> - [ ] quoted task", "", "1. [X] numbered task" })
+  code = get(session .. "/task/" .. buf .. "?line=" .. (line_count + 1) .. "&checked=1", same_origin)
+  local code2 = get(session .. "/task/" .. buf .. "?line=" .. (line_count + 3) .. "&checked=0", same_origin)
+  check(
+    "tasks in blockquotes and ordered lists are ticked and cleared",
+    code == 200
+      and code2 == 200
+      and buf_line(line_count + 1) == "> - [x] quoted task"
+      and buf_line(line_count + 3) == "1. [ ] numbered task",
+    { buf_line(line_count + 1), buf_line(line_count + 3) }
+  )
+  vim.api.nvim_buf_set_lines(buf, line_count, -1, false, {})
+  vim.bo[buf].modifiable = false
+  check(
+    "a buffer that is not modifiable is refused",
+    get(task .. "&checked=1", same_origin) == 404 and buf_line(task_line) == "- [ ] Something still to do"
+  )
+  vim.bo[buf].modifiable = true
+  check("task needs custom header", get(task .. "&checked=1", { "-X", "POST", "-H", "Origin: " .. base }) == 403)
+  check(
+    "task needs the token",
+    get("/task/" .. buf .. "?line=" .. tostring(task_line) .. "&checked=1", same_origin) == 404
+  )
+  check(
+    "task needs a state",
+    get(task .. "&checked=yes", same_origin) == 404 and buf_line(task_line):find("[ ]", 1, true)
+  )
+
   -- Export: the connected tab renders the page and Neovim writes it.
   local messages = {}
   local notify = vim.notify

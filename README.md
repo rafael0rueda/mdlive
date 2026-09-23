@@ -16,7 +16,8 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Code highlighting (highlight.js) using your colorscheme's syntax colors,
   with line numbers and a copy button on code blocks
 - Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
-- Tables, task lists, heading anchors, footnotes, `:emoji:` shortcodes and
+- Task lists you can tick in the preview: the click changes `[ ]` to `[x]` in the buffer
+- Tables, heading anchors, footnotes, `:emoji:` shortcodes and
   relative images
 - GitHub alerts (`> [!NOTE]`, `[!TIP]`, `[!WARNING]`, ...) in your diagnostic colors
 - Export the preview to a standalone HTML file with `:MdLiveExport`
@@ -159,8 +160,8 @@ for example a README in a repository you just cloned:
   are only served for buffers that are being previewed.
 - The server listens on `127.0.0.1` and rejects requests with a non-local
   `Host` header. Requests that act in Neovim (opening a linked file, moving
-  the cursor, saving an export) need a same-origin request with a custom
-  header, so other websites cannot trigger them.
+  the cursor, ticking a task, saving an export) need a same-origin request
+  with a custom header, so other websites cannot trigger them.
 - Exported HTML files include a Content-Security-Policy that blocks scripts
   wherever they are opened.
 

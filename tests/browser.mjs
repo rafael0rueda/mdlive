@@ -177,6 +177,37 @@ try {
   check("turning the option off closes it", await waitFor(async () => !(await outlineState()).open));
   await page.eval(`window.scrollTo(0, 0)`);
 
+  // Task lists ---------------------------------------------------------------
+
+  const taskBox = `Array.from(document.querySelectorAll("#content li.task-list-item"))
+    .find((li) => li.textContent.includes("Something still to do")).querySelector("input")`;
+  const taskLine = await nvim.lua(`for i, text in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+      if text:find("Something still to do", 1, true) then return i - 1 end
+    end`);
+  const bufferTask = () => nvim.lua(`return vim.api.nvim_buf_get_lines(0, ${taskLine}, ${taskLine + 1}, false)[1]`);
+  check(
+    "task list checkboxes can be clicked",
+    await page.eval(`(() => { const box = ${taskBox}; return !box.disabled && box.closest("li").dataset.line === "${taskLine}"; })()`),
+  );
+  await page.eval(`${taskBox}.click()`);
+  const ticked = await waitFor(async () => (await bufferTask()) === "- [x] Something still to do");
+  check("clicking a task checkbox ticks the item in the buffer", ticked, await bufferTask());
+  check("the preview shows the ticked item", await waitFor(() => page.eval(`${taskBox}.checked`)));
+  await page.eval(`${taskBox}.click()`);
+  check(
+    "clicking it again clears the item",
+    await waitFor(async () => (await bufferTask()) === "- [ ] Something still to do"),
+    await bufferTask(),
+  );
+  await waitFor(() => page.eval(`!${taskBox}.checked`));
+  await nvim.lua(`vim.bo.modifiable = false`);
+  await page.eval(`${taskBox}.click()`);
+  const refused = await waitFor(() =>
+    page.eval(`!${taskBox}.checked && document.getElementById("status").textContent.startsWith("Could not update the task")`),
+  );
+  check("a refused click puts the checkbox back and says why", refused, await page.eval(`document.getElementById("status").textContent`));
+  await nvim.lua(`vim.bo.modifiable = true`);
+
   // Untrusted HTML -----------------------------------------------------------
 
   const lineCount = await nvim.lua("return vim.api.nvim_buf_line_count(0)");
@@ -185,6 +216,7 @@ try {
     "", "<script>window.__xss = 2</script>",
     "", '<a href="javascript:window.__xss = 3">probe link</a>',
     "", '<a href="https://example.com/" data-open-path="docs/guide.md" data-open-hash="#install">probe web link</a>',
+    "", '<p><input type="checkbox" class="posing-task" data-task="0"></p>',
   })`);
   const probed = await waitFor(() => page.eval(`!!document.querySelector('img[alt="probe"]')`));
   await sleep(300);
@@ -194,11 +226,13 @@ try {
     scripts: document.querySelectorAll("#content script").length,
     href: Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "probe link")?.getAttribute("href") ?? null,
     posing: Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "probe web link")?.hasAttribute("data-open-path") ?? null,
+    posingTask: document.querySelector("#content .posing-task")?.hasAttribute("data-task") ?? null,
   })`);
   check("renders raw HTML from the buffer", probed);
   check("scripts and event handlers in the buffer do not run", xss.ran === null && !xss.handlers && !xss.scripts, xss);
   check("javascript: links are removed", !xss.href?.startsWith("javascript:"), xss.href);
   check("a web link cannot pose as a link that opens a file in Neovim", xss.posing === false, xss);
+  check("a checkbox in the buffer cannot pose as a task list checkbox", xss.posingTask === false, xss);
   await nvim.lua(`vim.api.nvim_buf_set_lines(0, ${lineCount}, -1, false, {})`);
   await waitFor(() => page.eval(`!document.querySelector('img[alt="probe"]')`));
 
@@ -345,6 +379,10 @@ try {
   );
   check("the exported page does not contain the server token", html && !html.includes(token));
   check("the exported page has no outline", html && !html.includes('id="outline"'));
+  check(
+    "the exported task checkboxes cannot be clicked",
+    html && html.includes('<input type="checkbox" disabled') && !html.includes("data-task"),
+  );
   check("the exported page has a policy that blocks scripts", html?.includes(`http-equiv="Content-Security-Policy"`));
   check(
     "the exported page resolves relative srcset URLs",

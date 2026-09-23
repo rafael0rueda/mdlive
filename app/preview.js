@@ -173,7 +173,7 @@
 
   // Set by postProcess(), which trusts them. The same attributes in the markdown's
   // HTML are dropped: a web link must not pose as a link that opens a file in Neovim.
-  const scriptAttributes = ["data-src", "data-tex", "data-display", "data-open-path", "data-open-hash"];
+  const scriptAttributes = ["data-src", "data-tex", "data-display", "data-open-path", "data-open-hash", "data-task"];
 
   // Runs after sanitizing, so everything added here comes from this script.
   function postProcess(fragment, env) {
@@ -248,7 +248,11 @@
       first.nodeValue = first.nodeValue.slice(match[0].length);
       const box = document.createElement("input");
       box.type = "checkbox";
-      box.disabled = true;
+      // A click ticks the item on its source line, the <li>'s data-line (see the
+      // change handler). Not copied here: blocks are matched by their HTML
+      // without line numbers, and a copy would make every edit above rebuild them.
+      if (li.dataset.line) box.dataset.task = "";
+      else box.disabled = true;
       if (match[1] !== " ") box.setAttribute("checked", "");
       host.insertBefore(box, first);
       li.classList.add("task-list-item");
@@ -758,6 +762,7 @@
 
   // Attributes this script adds for the live preview; the exported page does not need them.
   const liveAttributes = [
+    "data-task",
     "data-line",
     "data-source",
     "data-src",
@@ -811,6 +816,8 @@
       el.setAttribute("srcset", mapSrcset(el.getAttribute("srcset"), local));
     }
     page.querySelectorAll(".copy-code").forEach((button) => button.remove());
+    // The file cannot tick them in Neovim.
+    page.querySelectorAll("input[data-task]").forEach((box) => box.setAttribute("disabled", ""));
     for (const el of page.querySelectorAll(liveAttributes.map((name) => `[${name}]`).join(","))) {
       liveAttributes.forEach((name) => el.removeAttribute(name));
     }
@@ -914,6 +921,22 @@
     } catch (err) {
       navigating = false;
       flashStatus(`Could not open ${openPath}: ${err.message}`);
+    }
+  });
+
+  // A task list checkbox ticks or clears its item in Neovim, and the buffer
+  // update that follows renders it again. When Neovim refuses, it goes back.
+  contentEl.addEventListener("change", async (event) => {
+    const box = /** @type {HTMLInputElement} */ (event.target);
+    if (!box.matches("input[data-task]")) return;
+    const line = /** @type {HTMLElement | null} */ (box.closest("li"))?.dataset.line;
+    if (line === undefined) return;
+    const checked = box.checked;
+    try {
+      await post(`/task/${bufnr}?line=${line}&checked=${checked ? 1 : 0}`);
+    } catch (err) {
+      box.checked = !checked;
+      flashStatus(`Could not update the task: ${err.message}`);
     }
   });
 

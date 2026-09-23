@@ -231,6 +231,36 @@ local function jump(bufnr, line)
   return true
 end
 
+-- A task list checkbox was clicked in the preview: tick or clear the item on
+-- source line `line` (0-based). Only its [ ] or [x] changes, and only while the
+-- line is still a task item in the other state: otherwise the buffer changed
+-- after the page was rendered.
+---@param bufnr integer
+---@param line integer|nil
+---@param checked boolean|nil
+---@return true|nil ok
+---@return string|nil err
+local function toggle_task(bufnr, line, checked)
+  if not line or checked == nil then
+    return nil, "invalid task"
+  end
+  if not vim.bo[bufnr].modifiable then
+    return nil, "the buffer is not modifiable"
+  end
+  local text = api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
+  -- A list marker, in blockquotes too, then the box.
+  local prefix, mark = text:match("^([%s>]*[-*+]%s+%[)([ xX])%]")
+  if not prefix then
+    prefix, mark = text:match("^([%s>]*%d+[.)]%s+%[)([ xX])%]")
+  end
+  if not prefix or (mark ~= " ") == checked then
+    return nil, "the buffer changed, try again"
+  end
+  api.nvim_buf_set_text(bufnr, line, #prefix, line, #prefix + 1, { checked and "x" or " " })
+  send_content(bufnr)
+  return true
+end
+
 local function start_server()
   if server.is_running() then
     return true
@@ -245,6 +275,7 @@ local function start_server()
     file_roots = file_roots,
     on_open_link = open_link,
     on_jump = jump,
+    on_task = toggle_task,
     on_export = export.receive,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
