@@ -65,6 +65,9 @@ than 0.11 need a fallback.
   `vim.notify()`, prefixed with `[mdlive]`.
 - `app/preview.js` is plain JavaScript in one IIFE with `"use strict"`: no
   build step, no modules, no npm.
+- A change users notice gets a line in the `## [Unreleased]` section of
+  `CHANGELOG.md`, under `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`
+  or `Security`.
 - The libraries in `app/vendor` are not edited. When one is updated, its
   version in the README table and its license in `app/vendor/licenses` are
   updated too.
@@ -103,3 +106,19 @@ which the smoke and browser tests cover:
   that says what changed for the user. Then a blank line, a short paragraph
   on why when it isn't obvious, and `- ` bullets for the details, including
   what the tests now cover.
+
+## Releases
+
+mdlive follows [Semantic Versioning](https://semver.org/); until 1.0, a minor
+version (0.x.0) can change or remove features. Releases are tags on `main`:
+
+1. In a pull request, rename `## [Unreleased]` in `CHANGELOG.md` to
+   `## [x.y.z] - YYYY-MM-DD`, add an empty `## [Unreleased]` above it and
+   update the links at the bottom. Update the version in the README's
+   `git clone --branch` line. `make release-notes VERSION=x.y.z` shows the
+   notes the release will get.
+2. Once it is merged, tag the merge on `main` and push the tag:
+   `git tag -a vx.y.z -m "mdlive vx.y.z" && git push origin vx.y.z`.
+3. The release workflow (`.github/workflows/release.yml`) checks that the tag
+   is on `main` and publishes a GitHub release with that section of
+   `CHANGELOG.md` as its notes.

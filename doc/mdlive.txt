@@ -39,6 +39,7 @@ the plugin, so there is nothing else to install and it works offline.
 With lazy.nvim: >lua
     {
       "rafael0rueda/mdlive",
+      version = "*", -- the latest release; remove it to follow main
       ft = "markdown",
       cmd = { "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveExport" },
       opts = {},
