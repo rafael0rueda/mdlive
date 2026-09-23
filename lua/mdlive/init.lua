@@ -411,6 +411,27 @@ function M.is_enabled(filter)
   return previews[resolve_buf(buf)] ~= nil
 end
 
+--- Returns the URL of the preview of the buffer `filter.buf` (0 for the current
+--- one). Without it, the current buffer's, or in follow mode the one the tabs
+--- are showing. The URL carries the token that gives access to the preview.
+--- Returns nil and a message when there is no such preview.
+---@param filter? mdlive.Filter
+---@return string|nil url
+---@return string|nil err
+function M.url(filter)
+  vim.validate("filter", filter, "table", true)
+  local buf = filter and filter.buf
+  vim.validate("filter.buf", buf, "number", true)
+  local bufnr = resolve_buf(buf)
+  if buf == nil and not previews[bufnr] and config.options.follow and active and previews[active] then
+    bufnr = active
+  end
+  if not previews[bufnr] then
+    return nil, "no preview for this buffer, :MdLive starts one"
+  end
+  return server.url(bufnr)
+end
+
 --- Writes the rendered preview of `bufnr` to a standalone HTML file. The page
 --- is rendered by the browser, so the preview is opened first if needed.
 --- `opts.path` defaults to the buffer's file with an .html extension, and

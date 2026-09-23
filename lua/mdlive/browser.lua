@@ -84,9 +84,13 @@ end
 
 --- Opens `url` with the `browser` option: a function gets the URL itself, and a
 --- program is started on the redirect file, or on the URL if that fails.
+--- `false` opens nothing.
 ---@param url string
 function M.open(url)
   local browser = config.options.browser
+  if browser == false then
+    return
+  end
   if type(browser) == "function" then
     -- Runs inside Neovim: the URL is not passed to another program.
     return browser(url)

@@ -4,7 +4,7 @@ local M = {}
 ---@field host? string Address the preview server binds to.
 ---@field file_root? string Directory the preview may read files from; nil uses the working directory.
 ---@field port? integer Port of the server, 0 picks a free one.
----@field browser? string|string[]|fun(url: string) Opens the preview; nil uses the system default browser.
+---@field browser? string|string[]|fun(url: string)|boolean Opens the preview; nil uses the system default browser, false opens nothing.
 ---@field browser_redirect? boolean Starts the browser on a file that redirects to the preview, keeping the token out of the process list.
 ---@field debounce_ms? integer Milliseconds to wait after the last change before updating the preview.
 ---@field auto_open? boolean Starts the preview when a buffer of `filetypes` is opened.
@@ -19,7 +19,7 @@ local M = {}
 ---@field host string
 ---@field file_root? string
 ---@field port integer
----@field browser? string|string[]|fun(url: string)
+---@field browser? string|string[]|fun(url: string)|boolean
 ---@field browser_redirect boolean
 ---@field debounce_ms integer
 ---@field auto_open boolean
@@ -41,6 +41,7 @@ M.defaults = {
   file_root = nil,
   -- nil: system default (vim.ui.open). A string ("firefox"), a command list
   -- ({ "firefox", "--new-window" }) or a function(url) are also accepted.
+  -- false opens nothing, for example over SSH: open the URL :MdLiveUrl shows.
   browser = nil,
   -- The preview URL contains a token, and command lines are readable by every
   -- user on the machine. Start the browser on a file that redirects to the
@@ -72,7 +73,7 @@ M.types = {
   host = { "string" },
   file_root = { "string" },
   port = { "number" },
-  browser = { "string", "table", "function" },
+  browser = { "string", "table", "function", "boolean" },
   browser_redirect = { "boolean" },
   debounce_ms = { "number" },
   auto_open = { "boolean" },

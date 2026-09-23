@@ -24,6 +24,16 @@ command("MdLiveToggle", function()
   mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 })
 end, { desc = "Toggle the live preview of the current buffer" })
 
+command("MdLiveUrl", function()
+  local url, err = require("mdlive").url()
+  if not url then
+    return vim.notify("[mdlive] " .. err, vim.log.levels.ERROR)
+  end
+  -- Over SSH, the clipboard can be the one of the machine you connect from (OSC 52).
+  local copied = vim.fn.has("clipboard") == 1 and pcall(vim.fn.setreg, "+", url)
+  vim.notify("[mdlive] " .. url .. (copied and " (copied to the clipboard)" or ""))
+end, { desc = "Show the URL of the preview and copy it to the clipboard" })
+
 command("MdLiveExport", function(args)
   require("mdlive").export(0, { path = args.args, force = args.bang })
 end, { nargs = "?", bang = true, complete = "file", desc = "Export the preview of the current buffer to HTML" })

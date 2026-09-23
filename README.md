@@ -67,20 +67,21 @@ require("mdlive").setup()
 | `:MdLive`                 | Start the preview and open it in the browser (reuses an open tab) |
 | `:MdLiveStop`             | Stop the preview (in follow mode, from any buffer)                |
 | `:MdLiveToggle`           | Toggle the preview                                                |
+| `:MdLiveUrl`              | Show the preview URL and copy it to the clipboard                 |
 | `:MdLiveExport[!] [file]` | Save the preview as HTML, next to the file by default (`!` overwrites) |
 
 To get a PDF, print the preview from the browser.
 
 mdlive maps no keys. Each command has a Normal mode mapping to bind to your own
-keys: `<Plug>(MdLive)`, `<Plug>(MdLiveStop)`, `<Plug>(MdLiveToggle)` and
-`<Plug>(MdLiveExport)`.
+keys: `<Plug>(MdLive)`, `<Plug>(MdLiveStop)`, `<Plug>(MdLiveToggle)`,
+`<Plug>(MdLiveUrl)` and `<Plug>(MdLiveExport)`.
 
 ```lua
 vim.keymap.set("n", "<leader>mp", "<Plug>(MdLiveToggle)", { desc = "Markdown preview" })
 ```
 
-The same actions are available from Lua with `enable()`, `is_enabled()` and
-`export()`, see `:help mdlive-api`.
+The same actions are available from Lua with `enable()`, `is_enabled()`,
+`url()` and `export()`, see `:help mdlive-api`.
 
 Try it with `examples/demo.md`.
 
@@ -93,7 +94,7 @@ require("mdlive").setup({
   host = "127.0.0.1",   -- address the server binds to
   port = 0,             -- 0 = pick a free port
   file_root = nil,      -- nil = the working directory, when the file is inside it
-  browser = nil,        -- nil = system default, "firefox", { "firefox", "--new-window" } or function(url)
+  browser = nil,        -- nil = system default, "firefox", { "firefox", "--new-window" }, function(url) or false
   browser_redirect = true, -- keep the preview URL out of the process list (off for sandboxed browsers)
   debounce_ms = 150,    -- delay after the last edit before updating
   auto_open = false,    -- open the preview when a buffer of `filetypes` is opened
@@ -105,6 +106,23 @@ require("mdlive").setup({
   outline = false,      -- open the outline of the headings (the ☰ button toggles it)
 })
 ```
+
+## Remote use
+
+When Neovim runs on another machine, forward the preview's port over SSH and
+open it in your local browser:
+
+```lua
+-- On the remote machine: a fixed port, and no browser there.
+require("mdlive").setup({ port = 8090, browser = false })
+```
+
+```sh
+ssh -L 8090:127.0.0.1:8090 user@host
+```
+
+Then `:MdLive` and `:MdLiveUrl`, which shows the URL and copies it to your
+clipboard in terminals that support OSC 52. See `:help mdlive-remote`.
 
 ## How it works
 
