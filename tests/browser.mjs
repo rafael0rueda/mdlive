@@ -390,6 +390,44 @@ try {
     html?.match(/srcset="[^"]*"/)?.[0],
   );
 
+  // Wiki links ---------------------------------------------------------------
+
+  const beforeWiki = await nvim.lua("return vim.api.nvim_buf_line_count(0)");
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, {
+    "", "[[docs/guide#Install|the guide]] [[guide]] [[#Math]] [[manual.pdf]]",
+  })`);
+  const wiki = await waitFor(() =>
+    page.eval(`(() => {
+      const links = Array.from(document.querySelectorAll("#content a.wikilink"));
+      if (links.length < 4) return null;
+      return links.map((a) => ({ text: a.textContent, href: a.getAttribute("href"), open: a.dataset.openPath ?? null }));
+    })()`),
+  );
+  check(
+    "wiki links render as links, with a label and a heading",
+    wiki?.[0].text === "the guide" && wiki[0].href === `${files}docs/guide.md#install` && wiki[0].open === "docs/guide.md",
+    wiki,
+  );
+  check("a wiki link without an extension points to a note", wiki?.[1].text === "guide" && wiki[1].open === "guide.md", wiki);
+  check("a wiki link to a heading of this page stays on it", wiki?.[2].href === "#math", wiki);
+  check(
+    "a wiki link to another kind of file keeps its extension",
+    wiki?.[3].href === `${files}manual.pdf` && wiki[3].open === null,
+    wiki,
+  );
+  const demoBuf = await nvim.lua("return vim.api.nvim_get_current_buf()");
+  await page.eval(`Array.from(document.querySelectorAll("#content a.wikilink")).find((a) => a.textContent === "guide").click()`);
+  const noteOpened = await waitFor(async () => {
+    const title = await page.eval(`document.querySelector("h1")?.textContent`);
+    return title === "Guide" && (await nvim.lua(`return vim.fs.basename(vim.api.nvim_buf_get_name(0))`));
+  });
+  check("clicking a wiki link opens the note it names, found in another folder", noteOpened === "guide.md", noteOpened);
+  // Back to the demo: follow mode takes the tab along.
+  await nvim.lua(`vim.cmd.buffer(${demoBuf})`);
+  await waitFor(() => page.eval(`document.querySelector("h1")?.textContent === "mdlive demo"`), { timeout: 10000 });
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, ${beforeWiki}, -1, false, {})`);
+  await waitFor(() => page.eval(`!document.querySelector("#content a.wikilink")`));
+
   // Status messages ----------------------------------------------------------
 
   await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, { "", "[missing probe](missing.md)" })`);

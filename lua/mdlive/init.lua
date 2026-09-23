@@ -171,16 +171,44 @@ end
 
 local markdown_ext = { md = true, markdown = true, mdown = true, mkd = true, mkdn = true }
 
+-- A wiki link names a note rather than a path: when it is not next to the
+-- file, the first file under `roots` whose path ends with `rel` (sub/note.md
+-- matches a/sub/note.md). Hidden directories and node_modules are skipped.
+---@param rel string
+---@param roots string[]
+---@return string|nil
+local function find_note(rel, roots)
+  local suffix = "/" .. vim.fs.normalize(rel):gsub("^%./", "")
+  local function skip(dir)
+    local name = vim.fs.basename(dir)
+    return not (name:sub(1, 1) == "." or name == "node_modules")
+  end
+  for _, root in ipairs(roots) do
+    for name, kind in vim.fs.dir(root, { depth = 20, skip = skip }) do
+      if kind == "file" and ("/" .. name):sub(-#suffix) == suffix then
+        return vim.fs.joinpath(root, name)
+      end
+    end
+  end
+end
+
 -- A relative markdown link was clicked in the preview: show the file in the
--- window of the source buffer and return the preview URL for it.
-local function open_link(from_buf, rel)
+-- window of the source buffer and return the preview URL for it. A wiki link
+-- may also name a note elsewhere under the directories the preview may read.
+local function open_link(from_buf, rel, wiki)
   local dir = buf_dir(from_buf)
   if not dir or rel == "" then
     return nil, "invalid link"
   end
   -- Confined to the same directories as the files the preview may fetch, so a
   -- link in an untrusted document cannot reach the rest of the filesystem.
-  local path = server.resolve(dir, rel, file_roots(dir))
+  local roots = file_roots(dir)
+  local path = server.resolve(dir, rel, roots)
+  if not path and wiki then
+    local note = find_note(rel, roots)
+    -- What was found goes through the same check, symlinks included.
+    path = note and server.resolve(vim.fs.dirname(note), vim.fs.basename(note), roots)
+  end
   if not path then
     return nil, "file not found"
   end

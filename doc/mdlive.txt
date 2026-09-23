@@ -383,6 +383,16 @@ Links and images                                                *mdlive-links*
     tab, keeping a fragment such as `#page=3` for PDFs, and web links open in
     a new tab.
 
+Wiki links                                                  *mdlive-wikilinks*
+    `[[note]]`, `[[note#Heading]]`, `[[note|label]]` and `[[#Heading]]` link
+    to other notes, as in Obsidian and other wikis. `.md` is added to the
+    name unless it has an extension such as `.pdf` or `.png`, and a heading
+    becomes the anchor the preview gives it. Clicking one opens the note in
+    Neovim like a relative link. When the note is not next to the file, it
+    is looked for by name, or by the end of its path (`[[sub/note]]`),
+    under the directories the preview may read (see |mdlive-config-file_root|);
+    hidden directories and `node_modules` are skipped.
+
 Export                                                         *mdlive-export*
     |:MdLiveExport| saves the page as it looks in the preview, theme colors
     included, as a single HTML file that needs no network. Relative images
@@ -421,7 +431,8 @@ just cloned, so the preview treats it as untrusted:
   the page uses for its own features are removed from it, so a web link
   cannot pose as a link that opens a file in Neovim.
 - Files are served only from the directory of the Markdown file and the
-  project it is in, in a sandbox that blocks scripts. Symlinks are resolved
+  project it is in, in a sandbox that blocks scripts. A wiki link to a note
+  that is not next to the file is looked for only there too. Symlinks are resolved
   first, so neither a file the page fetches nor a link that opens a file in
   Neovim can point outside those directories. The working directory counts as
   the project only when the Markdown file is inside it, so previewing

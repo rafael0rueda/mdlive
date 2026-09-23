@@ -10,7 +10,7 @@ local M = {}
 ---@field buf_dir fun(bufnr: integer): string|nil Directory the buffer's files are served from.
 ---@field file_roots fun(dir: string): string[] Directories the files of `dir` may come from.
 ---@field on_subscribe fun(bufnr: integer) Handles a tab connecting to the buffer's preview.
----@field on_open_link fun(bufnr: integer, path: string): string|nil, string|nil Handles a clicked markdown link; returns the preview path of the opened file.
+---@field on_open_link fun(bufnr: integer, path: string, wiki: boolean): string|nil, string|nil Handles a clicked markdown link, a wiki link when `wiki` is set; returns the preview path of the opened file.
 ---@field on_jump fun(bufnr: integer, line: integer|nil): true|nil, string|nil Handles a double-clicked block; `line` is 0-based.
 ---@field on_task fun(bufnr: integer, line: integer|nil, checked: boolean|nil): true|nil, string|nil Handles a clicked task list checkbox; `line` is 0-based.
 ---@field on_export fun(id: integer, html: string, err: string|nil): true|nil, string|nil Handles the rendered page of a pending export.
@@ -312,8 +312,8 @@ local function post(sock, path, target, headers, body)
       return json(sock, "404 Not Found", { error = "no preview for this buffer" })
     end
     if action == "open" then
-      -- /open/<bufnr>?path=: a relative markdown link was clicked.
-      result, err = h.on_open_link(id, query_param(target, "path") or "")
+      -- /open/<bufnr>?path=[&wiki=1]: a relative markdown or wiki link was clicked.
+      result, err = h.on_open_link(id, query_param(target, "path") or "", query_param(target, "wiki") == "1")
     elseif action == "jump" then
       -- /jump/<bufnr>?line=: a block was double-clicked.
       local line = query_param(target, "line")
