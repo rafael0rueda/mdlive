@@ -2,6 +2,9 @@
 --   nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
 local root = vim.fn.getcwd()
 local failures = 0
+local windows = vim.fn.has("win32") == 1
+-- Where curl writes a body that is not needed.
+local devnull = windows and "NUL" or "/dev/null"
 -- The example files may be open in another Neovim (or a parallel test run);
 -- swap file prompts would make switching buffers fail.
 vim.o.swapfile = false
@@ -107,14 +110,16 @@ local ok, err = xpcall(function()
   client:close()
 
   -- Symlinks are followed only when they stay inside the allowed directories.
-  local sandbox = vim.fn.tempname()
+  -- Normalized: forward slashes on Windows too, as the plugin reports paths.
+  local sandbox = vim.fs.normalize(vim.fn.tempname())
   local notes, secrets = sandbox .. "/notes", sandbox .. "/secrets"
   vim.fn.mkdir(notes, "p")
   vim.fn.mkdir(secrets, "p")
   vim.fn.writefile({ "secret" }, secrets .. "/key.txt")
   vim.fn.writefile({ "<svg xmlns='http://www.w3.org/2000/svg'/>" }, notes .. "/real.svg")
   vim.fn.writefile({ "# Notes" }, notes .. "/index.md")
-  assert(vim.uv.fs_symlink(secrets, notes .. "/secrets"))
+  -- Windows needs to know a symlink points to a directory; other systems ignore it.
+  assert(vim.uv.fs_symlink(secrets, notes .. "/secrets", { dir = true }))
   assert(vim.uv.fs_symlink(secrets .. "/key.txt", notes .. "/key.txt"))
   assert(vim.uv.fs_symlink(notes .. "/real.svg", notes .. "/alias.svg"))
   local notes_buf = vim.fn.bufadd(notes .. "/index.md")
@@ -127,7 +132,7 @@ local ok, err = xpcall(function()
 
   -- The working directory is only a root for files inside it: this buffer is
   -- not, so the repository Neovim was started in stays out of reach.
-  local to_cwd = ("../"):rep(20) .. root:sub(2)
+  local to_cwd = ("../"):rep(20) .. vim.fs.normalize(root):gsub("^%a:", ""):sub(2)
   check(
     "serves no cwd files for a buffer outside the cwd",
     get(notes_files .. "/" .. to_cwd .. "/lua/mdlive/init.lua") == 404
@@ -154,7 +159,7 @@ local ok, err = xpcall(function()
   big_file:close()
   code, body = get(notes_files .. "/big.txt")
   check("streams a large file whole", code == 200 and body == big, { code, #body })
-  local _, range_headers = get(notes_files .. "/big.txt", { "-H", "Range: bytes=10-19", "-o", "/dev/null", "-D", "-" })
+  local _, range_headers = get(notes_files .. "/big.txt", { "-H", "Range: bytes=10-19", "-o", devnull, "-D", "-" })
   code, body = get(notes_files .. "/big.txt", { "-H", "Range: bytes=10-19" })
   check(
     "answers a range request",
@@ -172,7 +177,7 @@ local ok, err = xpcall(function()
   -- Back to the demo buffer's preview.
   vim.cmd("MdLive")
 
-  local head_only = { "-o", "/dev/null", "-D", "-" }
+  local head_only = { "-o", devnull, "-D", "-" }
   local _, page_headers = get(session .. "/preview/" .. buf, head_only)
   page_headers = page_headers:lower()
   check(
@@ -340,7 +345,7 @@ local ok, err = xpcall(function()
   vim.notify = function(msg)
     table.insert(messages, msg)
   end
-  local out_dir = vim.fn.tempname()
+  local out_dir = vim.fs.normalize(vim.fn.tempname())
   vim.fn.mkdir(out_dir, "p")
   local export_path = out_dir .. "/demo.html"
   local export_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
@@ -354,9 +359,12 @@ local ok, err = xpcall(function()
   local _, export_events = export_stream()
   local job = export_events:match("event: export\ndata: ([^\n]*)")
   job = job and vim.json.decode(job)
+  -- On Windows, a file on another drive than the one it is exported to is
+  -- linked with a file:// URL.
+  local other_drive = windows and root:sub(1, 1):lower() ~= out_dir:sub(1, 1):lower()
   check(
     "export asks the tab for the page",
-    job and job.id and job.base:match("^%.%./.*examples/$"),
+    job and job.id and job.base:match(other_drive and "^file:///%a:/.*examples/$" or "^%.%./.*examples/$"),
     export_events:match("event: export\ndata: [^\n]*")
   )
 
@@ -533,7 +541,7 @@ local ok, err = xpcall(function()
   local argv = sandbox .. "/browser-argv.txt"
   local function browser_argument(extra)
     vim.fn.delete(argv)
-    local command = { "sh", "-c", 'printf "%s" "$0" > ' .. argv }
+    local command = { "sh", "-c", 'printf "%s" "$0" > "' .. argv .. '"' }
     setup(vim.tbl_extend("force", { browser = command }, extra or {}))
     vim.cmd.buffer(buf)
     vim.cmd("MdLive")
@@ -550,9 +558,10 @@ local ok, err = xpcall(function()
   check("the browser is started on a file, not on the preview URL", argument:match("^file://") ~= nil, argument)
   local redirect = vim.uri_to_fname(argument)
   local redirect_stat = vim.uv.fs_stat(redirect)
+  -- Windows has no permission bits; the file is in the user's own cache directory.
   check(
     "only its owner can read the file holding the token",
-    redirect_stat and ("%o"):format(redirect_stat.mode % 512) == "600",
+    windows or (redirect_stat and ("%o"):format(redirect_stat.mode % 512) == "600"),
     redirect_stat and ("%o"):format(redirect_stat.mode % 512)
   )
   local redirect_page = table.concat(vim.fn.readfile(redirect), "\n")

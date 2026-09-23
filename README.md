@@ -170,9 +170,9 @@ and Chrome or Chromium (set `CHROME=/path/to/chrome` if it is not on `PATH`),
 and no packages.
 
 CI runs the same targets: the smoke test on Neovim 0.11, stable and nightly,
-the browser tests on stable, checks that the help tags in `doc/` build without
-errors and type checks the Lua code with lua-language-server, using the types
-in `$VIMRUNTIME`.
+and on macOS and Windows; the browser tests on Linux and macOS; checks that the
+help tags in `doc/` build without errors and type checks the Lua code with
+lua-language-server, using the types in `$VIMRUNTIME`.
 
 ## License
 
