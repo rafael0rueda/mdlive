@@ -7,6 +7,11 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Fixed
+
+- A `file_root` reached through a symlink, such as a directory in `/tmp` on
+  macOS, now gives access to its files; the preview used to refuse them
+
 ## [0.1.0] - 2026-09-23
 
 The first release.

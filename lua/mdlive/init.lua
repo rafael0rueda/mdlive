@@ -231,9 +231,15 @@ end
 ---@return string[]
 local function file_roots(dir)
   local roots = { dir }
+  -- Compared with symlinks resolved: buffer names already are, so a `file_root`
+  -- under a symlink (/tmp on macOS) would otherwise never contain the file.
+  local function real(path)
+    return vim.fs.normalize(vim.uv.fs_realpath(path) or path)
+  end
   -- A `file_root` may be relative, or start with ~.
-  local root = vim.fs.normalize(vim.fn.fnamemodify(config.options.file_root or vim.fn.getcwd(), ":p"))
-  if root ~= dir and vim.fs.relpath(root, dir) then
+  local root = real(vim.fn.fnamemodify(config.options.file_root or vim.fn.getcwd(), ":p"))
+  local real_dir = real(dir)
+  if root ~= real_dir and vim.fs.relpath(root, real_dir) then
     roots[#roots + 1] = root
   end
   return roots
