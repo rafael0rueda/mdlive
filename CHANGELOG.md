@@ -11,6 +11,8 @@ can change or remove features.
 
 - A `file_root` reached through a symlink, such as a directory in `/tmp` on
   macOS, now gives access to its files; the preview used to refuse them
+- A link whose address has a line break after its `#`, which raw HTML
+  allows, no longer stops the preview from updating
 
 ## [0.1.0] - 2026-09-23
 

@@ -248,6 +248,22 @@ try {
   );
   check("links to local files keep their fragment", media?.manual === `${files}assets/manual.pdf#page=3`, media);
 
+  // An href from raw HTML may hold a line break; the page must still render.
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, {
+    "", '<a href="docs/guide.md#a', 'b">newline probe</a>',
+  })`);
+  const newline = await waitFor(() =>
+    page.eval(`(() => {
+      const link = Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "newline probe");
+      return link && { href: link.getAttribute("href"), open: link.dataset.openPath ?? null };
+    })()`),
+  );
+  check(
+    "a link with a line break in its fragment is still rewritten",
+    newline?.href === `${files}docs/guide.md#a\nb` && newline.open === "docs/guide.md",
+    newline,
+  );
+
   // Export -------------------------------------------------------------------
 
   const exportPath = join(dir, "demo.html");
