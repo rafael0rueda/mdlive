@@ -463,6 +463,7 @@
     patchBlocks(contentEl, template.content);
     renderMath();
     lineIndex = null;
+    buildOutline();
     queueMermaid();
     if (pendingAnchor !== null) {
       document.getElementById(pendingAnchor)?.scrollIntoView();
@@ -571,6 +572,115 @@
   function errorHtml(err) {
     return `<pre class="mermaid-error">${md.utils.escapeHtml(String((err && err.message) || err))}</pre>`;
   }
+
+  // ----------------------------------------------------------------- outline
+
+  // The document's headings as links on the side, opened with the button at the
+  // top left. It is rebuilt when the headings change, and marks the section at
+  // the top of the window.
+  const outlineEl = /** @type {HTMLElement} */ (document.getElementById("outline"));
+  const outlineButton = /** @type {HTMLElement} */ (document.getElementById("outline-toggle"));
+  // Wide enough to show the outline next to the text instead of over it.
+  const wideWindow = matchMedia("(min-width: 1240px)");
+  /** @type {HTMLElement[]} */
+  let outlineHeadings = [];
+  /** @type {HTMLAnchorElement[]} */
+  let outlineLinks = [];
+  let outlineKey = "";
+  let outlineOpen = false;
+  // The `outline` option as last sent by Neovim: it opens or closes the outline
+  // when it changes, and the button decides in between.
+  /** @type {boolean | null} */
+  let outlineOption = null;
+
+  function showOutline() {
+    const shown = outlineOpen && outlineHeadings.length > 0;
+    outlineButton.hidden = outlineHeadings.length === 0;
+    outlineButton.setAttribute("aria-expanded", String(shown));
+    outlineEl.hidden = !shown;
+    document.body.classList.toggle("outline-open", shown);
+    markSection();
+  }
+
+  function buildOutline() {
+    const headings = /** @type {NodeListOf<HTMLElement>} */ (contentEl.querySelectorAll("h1, h2, h3, h4, h5, h6"));
+    outlineHeadings = Array.from(headings);
+    // innerText, not textContent: formulas also hold their source, which is hidden.
+    const texts = outlineHeadings.map((heading) => heading.innerText.trim());
+    const key = outlineHeadings.map((heading, i) => `${heading.tagName} ${texts[i]}`).join("\n");
+    if (key !== outlineKey) {
+      outlineKey = key;
+      const top = Math.min(...outlineHeadings.map((heading) => Number(heading.tagName[1])));
+      const list = document.createElement("ul");
+      outlineLinks = outlineHeadings.map((heading, i) => {
+        const link = document.createElement("a");
+        link.href = `#${encodeURIComponent(heading.id)}`;
+        link.textContent = texts[i];
+        link.dataset.depth = String(Number(heading.tagName[1]) - top);
+        link.dataset.index = String(i);
+        const item = document.createElement("li");
+        item.append(link);
+        list.append(item);
+        return link;
+      });
+      outlineEl.replaceChildren(list);
+    }
+    showOutline();
+  }
+
+  // The current section: the last heading above a line a little below the top
+  // of the window, so a heading just scrolled to counts. At the bottom of the
+  // page, where the last headings cannot reach the top, the last one in view.
+  function markSection() {
+    if (outlineEl.hidden) return;
+    const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1;
+    const line = atBottom ? window.innerHeight : 80;
+    let current = -1;
+    while (current + 1 < outlineHeadings.length && outlineHeadings[current + 1].getBoundingClientRect().top <= line) {
+      current++;
+    }
+    outlineLinks.forEach((link, i) => {
+      if (i === current) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+    // Keep the marked entry in view in a long outline.
+    const link = outlineLinks[current];
+    const { scrollTop, clientHeight } = outlineEl;
+    if (link && (link.offsetTop < scrollTop || link.offsetTop + link.offsetHeight > scrollTop + clientHeight)) {
+      outlineEl.scrollTop = link.offsetTop - clientHeight / 2;
+    }
+  }
+
+  outlineButton.addEventListener("click", () => {
+    outlineOpen = !outlineOpen;
+    showOutline();
+  });
+
+  outlineEl.addEventListener("click", (event) => {
+    const link = /** @type {Element} */ (event.target).closest("a");
+    if (!link) return;
+    // Scrolls without adding the heading to the address and the history.
+    event.preventDefault();
+    outlineHeadings[Number(/** @type {HTMLElement} */ (link).dataset.index)]?.scrollIntoView();
+    if (!wideWindow.matches) {
+      outlineOpen = false;
+      showOutline();
+    }
+  });
+
+  let sectionQueued = false;
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (sectionQueued) return;
+      sectionQueued = true;
+      requestAnimationFrame(() => {
+        sectionQueued = false;
+        markSection();
+      });
+    },
+    { passive: true },
+  );
 
   // ------------------------------------------------------------------ scroll
 
@@ -866,7 +976,14 @@
       scheduleUpdate();
     });
     events.addEventListener("settings", (e) => {
-      const lineNumbers = JSON.parse(e.data).code_line_numbers !== false;
+      const data = JSON.parse(e.data);
+      const outline = data.outline === true;
+      if (outline !== outlineOption) {
+        outlineOption = outline;
+        outlineOpen = outline;
+        showOutline();
+      }
+      const lineNumbers = data.code_line_numbers !== false;
       if (lineNumbers === settings.lineNumbers) return;
       settings.lineNumbers = lineNumbers;
       if (lastText !== null) {

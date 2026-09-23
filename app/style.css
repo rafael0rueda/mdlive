@@ -102,6 +102,84 @@ body {
   color: var(--fg);
 }
 
+/* The outline: the document's headings on the left, opened with the button
+   above them. Wide windows make room for it; on narrow ones it covers the text. */
+#outline-toggle {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 11;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 15px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+#outline-toggle:hover,
+#outline-toggle[aria-expanded="true"] {
+  color: var(--fg);
+}
+
+#outline {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  width: 280px;
+  overflow-y: auto;
+  padding: 48px 8px 24px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  font: 14px/1.4 system-ui, sans-serif;
+  box-shadow: 0 0 24px rgb(0 0 0 / 0.2);
+}
+
+#outline ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#outline a {
+  display: block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+#outline a:hover {
+  color: var(--fg);
+}
+
+#outline a[aria-current] {
+  background: var(--bg);
+  color: var(--link);
+}
+
+#outline a[data-depth="1"] { padding-left: 20px; }
+#outline a[data-depth="2"] { padding-left: 32px; }
+#outline a[data-depth="3"] { padding-left: 44px; }
+#outline a[data-depth="4"] { padding-left: 56px; }
+#outline a[data-depth="5"] { padding-left: 68px; }
+
+@media (min-width: 1240px) {
+  body.outline-open {
+    padding-left: 280px;
+  }
+
+  #outline {
+    box-shadow: none;
+  }
+}
+
 .markdown-body {
   max-width: 900px;
   margin: 0 auto;
@@ -122,6 +200,8 @@ body {
   margin: 24px 0 16px;
   font-weight: 600;
   line-height: 1.25;
+  /* Room above a heading scrolled to from the outline or a #link. */
+  scroll-margin-top: 16px;
 }
 
 .markdown-body h1 { font-size: 2em; color: var(--h1, var(--fg)); }
@@ -438,6 +518,8 @@ body {
 @media print {
   /* Long lines wrap on paper, which would put the line numbers out of line. */
   #status,
+  #outline,
+  #outline-toggle,
   .copy-code,
   .line-numbers {
     display: none !important;
@@ -451,6 +533,10 @@ body {
   .markdown-body {
     max-width: none;
     padding: 0;
+  }
+
+  body.outline-open {
+    padding-left: 0;
   }
 
   .markdown-body pre {

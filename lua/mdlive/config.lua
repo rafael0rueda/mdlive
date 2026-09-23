@@ -13,6 +13,7 @@ local M = {}
 ---@field scroll_sync? boolean Scrolls the preview to follow the cursor.
 ---@field follow_theme? boolean Uses the colors of the current colorscheme in the preview.
 ---@field code_line_numbers? boolean Shows line numbers on code blocks with more than one line.
+---@field outline? boolean Opens the outline of the headings when the preview opens.
 
 ---@class mdlive.Config
 ---@field host string
@@ -27,6 +28,7 @@ local M = {}
 ---@field scroll_sync boolean
 ---@field follow_theme boolean
 ---@field code_line_numbers boolean
+---@field outline boolean
 
 ---@type mdlive.Config
 M.defaults = {
@@ -59,6 +61,9 @@ M.defaults = {
   follow_theme = true,
   -- Show line numbers on code blocks with more than one line.
   code_line_numbers = true,
+  -- Open the outline of the headings next to the preview. The button at the
+  -- top left of the page opens and closes it either way.
+  outline = false,
 }
 
 -- Accepted type(s) of every option; also the list of known options.
@@ -76,6 +81,7 @@ M.types = {
   scroll_sync = { "boolean" },
   follow_theme = { "boolean" },
   code_line_numbers = { "boolean" },
+  outline = { "boolean" },
 }
 
 ---@type mdlive.Config

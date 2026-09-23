@@ -7,6 +7,12 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Added
+
+- An outline of the document's headings, opened with the button at the top
+  left of the preview. It marks the section at the top of the window, and a
+  click scrolls to a heading. The `outline` option opens it from the start
+
 ## [0.1.1] - 2026-09-23
 
 ### Fixed

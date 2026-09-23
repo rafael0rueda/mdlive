@@ -108,6 +108,75 @@ try {
   const imageLoaded = await waitFor(() => page.eval(`document.querySelector('img[alt="Local image"]')?.naturalWidth > 0`));
   check("relative images load through the token URL", imageLoaded);
 
+  // Outline ------------------------------------------------------------------
+
+  const outlineState = () =>
+    page.eval(`({
+      button: !document.getElementById("outline-toggle").hidden,
+      open: !document.getElementById("outline").hidden,
+      entries: Array.from(document.querySelectorAll("#outline a"), (a) => a.textContent + "@" + a.dataset.depth),
+      headings: Array.from(document.querySelectorAll("#content :is(h1, h2, h3, h4, h5, h6)"), (h) => h.textContent),
+      current: document.querySelector("#outline a[aria-current]")?.textContent ?? null,
+      padded: parseFloat(getComputedStyle(document.body).paddingLeft) > 0,
+    })`);
+  let outline = await outlineState();
+  check("the outline button is shown and the outline starts closed", outline.button && !outline.open, outline);
+  await page.eval(`document.getElementById("outline-toggle").click()`);
+  outline = await outlineState();
+  check(
+    "the outline lists the headings, indented by level",
+    outline.open &&
+      outline.entries.length === outline.headings.length &&
+      outline.entries[0] === "mdlive demo@0" &&
+      outline.entries[1] === `${outline.headings[1]}@1`,
+    outline,
+  );
+  // The front matter comes before the first heading: no section is passed yet.
+  check("nothing is marked above the first heading", outline.current === null, outline);
+  const lastHeading = outline.headings.at(-1);
+  await page.eval(`Array.from(document.querySelectorAll("#outline a")).at(-1).click()`);
+  // 16px below the top (scroll-margin-top), unless it is too close to the end of the page to get there.
+  const atHeading = await waitFor(() =>
+    page.eval(`(() => {
+      const top = Array.from(document.querySelectorAll("#content h2")).at(-1).getBoundingClientRect().top;
+      const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 1;
+      return Math.abs(top - 16) < 2 || (atBottom && top > 0 && top < innerHeight);
+    })()`),
+  );
+  outline = await outlineState();
+  check("clicking an entry scrolls to its heading", atHeading, await page.eval("scrollY"));
+  check(
+    "in a narrow window the outline covers the text and closes after a click",
+    !outline.open && !outline.padded,
+    outline,
+  );
+  check("clicking an entry leaves the address alone", (await page.eval("location.hash")) === "");
+  await page.eval(`document.getElementById("outline-toggle").click()`);
+  outline = await outlineState();
+  check("the outline marks the section at the top of the window", outline.current === lastHeading, outline);
+  await page.eval(`document.getElementById("outline-toggle").click()`);
+
+  await page.resize(1400, 800);
+  await page.eval(`document.getElementById("outline-toggle").click()`);
+  await page.eval(`document.querySelector("#outline a").click()`);
+  outline = await waitFor(async () => {
+    const state = await outlineState();
+    return state.current === "mdlive demo" && state;
+  });
+  check("in a wide window the outline sits next to the text and stays open", outline?.open && outline.padded, outline);
+  await page.eval(`document.getElementById("outline-toggle").click()`);
+  await page.resize(1200, 800);
+
+  // The option opens it when it changes, and the button decides in between.
+  const setOutline = (value) =>
+    nvim.lua(`local options = vim.tbl_extend("force", require("mdlive.config").options, { outline = ${value} })
+      require("mdlive").setup(options)`);
+  await setOutline(true);
+  check("the outline option opens the outline", await waitFor(async () => (await outlineState()).open));
+  await setOutline(false);
+  check("turning the option off closes it", await waitFor(async () => !(await outlineState()).open));
+  await page.eval(`window.scrollTo(0, 0)`);
+
   // Untrusted HTML -----------------------------------------------------------
 
   const lineCount = await nvim.lua("return vim.api.nvim_buf_line_count(0)");
@@ -275,6 +344,7 @@ try {
     html ? html.slice(0, 120) : html,
   );
   check("the exported page does not contain the server token", html && !html.includes(token));
+  check("the exported page has no outline", html && !html.includes('id="outline"'));
   check("the exported page has a policy that blocks scripts", html?.includes(`http-equiv="Content-Security-Policy"`));
   check(
     "the exported page resolves relative srcset URLs",

@@ -12,6 +12,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - One tab follows you: switching to another markdown buffer switches the preview
 - Scroll sync with the window and cursor, and double-click the preview to
   jump to the source line in Neovim
+- An outline of the headings next to the preview, marking the section you are in
 - Code highlighting (highlight.js) using your colorscheme's syntax colors,
   with line numbers and a copy button on code blocks
 - Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
@@ -101,6 +102,7 @@ require("mdlive").setup({
   scroll_sync = true,   -- scroll the preview with the cursor
   follow_theme = true,  -- use the Neovim colorscheme in the preview
   code_line_numbers = true, -- line numbers on code blocks with more than one line
+  outline = false,      -- open the outline of the headings (the ☰ button toggles it)
 })
 ```
 
