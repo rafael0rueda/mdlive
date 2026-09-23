@@ -1,0 +1,48 @@
+# The checks CI runs, to run them before pushing. `make check` runs them all.
+# `make tools` installs the pinned stylua and lua-language-server; CI uses the
+# same targets and versions.
+
+NVIM ?= nvim
+STYLUA_VERSION = 2.5.2
+LUALS_VERSION = 3.19.1
+# Where `make tools` installs: $(TOOLS)/bin must be on PATH.
+TOOLS ?= $(HOME)/.local
+
+.PHONY: check test browser lint format typecheck helptags tools
+
+check: test browser lint typecheck helptags
+
+# Neovim side: the server, its security checks and the Lua API.
+test:
+	$(NVIM) --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
+
+# The page in headless Chrome against a real Neovim (Node 22+, CHROME=... if not on PATH).
+browser:
+	node tests/browser.mjs
+
+lint:
+	stylua --check lua plugin tests
+
+format:
+	stylua lua plugin tests
+
+# The Neovim runtime provides the types of the vim and vim.uv modules.
+typecheck:
+	VIMRUNTIME="$$($(NVIM) --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)" \
+	  lua-language-server --check "$(CURDIR)" --checklevel=Warning \
+	  --configpath "$(CURDIR)/.luarc.json" --check_format=pretty
+
+helptags:
+	$(NVIM) --headless --clean -c "try | helptags doc | catch | echo v:exception | cquit | endtry" -c "qa!"
+
+tools:
+	mkdir -p "$(TOOLS)/bin" "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)"
+	curl -fsSL -o "$(TOOLS)/stylua.zip" \
+	  "https://github.com/JohnnyMorganz/StyLua/releases/download/v$(STYLUA_VERSION)/stylua-linux-x86_64.zip"
+	unzip -o -q "$(TOOLS)/stylua.zip" stylua -d "$(TOOLS)/bin"
+	rm "$(TOOLS)/stylua.zip"
+	curl -fsSL "https://github.com/LuaLS/lua-language-server/releases/download/$(LUALS_VERSION)/lua-language-server-$(LUALS_VERSION)-linux-x64.tar.gz" \
+	  | tar -xz -C "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)"
+	ln -sf "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)/bin/lua-language-server" "$(TOOLS)/bin/lua-language-server"
+	"$(TOOLS)/bin/stylua" --version
+	"$(TOOLS)/bin/lua-language-server" --version

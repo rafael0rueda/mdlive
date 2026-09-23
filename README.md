@@ -145,12 +145,16 @@ for example a README in a repository you just cloned:
 ## Tests
 
 ```sh
-nvim --headless --clean --cmd "set rtp^=." -c "luafile tests/smoke.lua"
-node tests/browser.mjs
-stylua --check lua plugin tests
-VIMRUNTIME="$(nvim --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q)" \
-  lua-language-server --check . --checklevel=Warning --configpath .luarc.json
+make check   # everything below
+make test    # tests/smoke.lua
+make browser # tests/browser.mjs
+make lint    # stylua --check (`make format` fixes it)
+make typecheck
+make helptags
 ```
+
+`make tools` installs the stylua and lua-language-server versions CI uses
+into `~/.local/bin` (`TOOLS=/other/prefix` to change it).
 
 `tests/smoke.lua` checks the Neovim side: the server, its security checks and
 what it sends. `tests/browser.mjs` opens the preview in headless Chrome against
@@ -159,9 +163,10 @@ scroll sync, jumping to the source, export and reconnecting. It needs Node 22+
 and Chrome or Chromium (set `CHROME=/path/to/chrome` if it is not on `PATH`),
 and no packages.
 
-CI runs the smoke test on Neovim 0.11, stable and nightly, the browser tests on
-stable, checks that the help tags in `doc/` build without errors and type checks
-the Lua code with lua-language-server, using the types in `$VIMRUNTIME`.
+CI runs the same targets: the smoke test on Neovim 0.11, stable and nightly,
+the browser tests on stable, checks that the help tags in `doc/` build without
+errors and type checks the Lua code with lua-language-server, using the types
+in `$VIMRUNTIME`.
 
 ## License
 
