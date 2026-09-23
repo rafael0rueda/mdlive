@@ -544,7 +544,7 @@
   let mermaidLoad = null;
   let mermaidQueue = Promise.resolve();
   /** @type {string | null} */
-  let mermaidTheme = null;
+  let mermaidThemeKey = null;
   let diagramId = 0;
   const diagramCache = new Map(); // `${theme}\n${src}` -> html
   const renderedDiagrams = new WeakMap(); // element -> cache key
@@ -564,8 +564,42 @@
     mermaidQueue = mermaidQueue.then(renderMermaid, renderMermaid);
   }
 
+  // Diagrams take the page's colors, which come from the colorscheme and the
+  // `css` option. Mermaid's "base" theme is the one that uses themeVariables,
+  // and it works out the other shades from these.
+  function mermaidTheme() {
+    const style = getComputedStyle(root);
+    /** @type {Record<string, string | boolean>} */
+    const vars = { darkMode: mode === "dark", fontFamily: getComputedStyle(contentEl).fontFamily };
+    const colors = {
+      background: "bg",
+      mainBkg: "surface",
+      primaryColor: "surface",
+      primaryTextColor: "fg",
+      primaryBorderColor: "border",
+      secondaryColor: "bg",
+      tertiaryColor: "bg",
+      lineColor: "muted",
+      defaultLinkColor: "muted",
+      arrowheadColor: "muted",
+      edgeLabelBackground: "bg",
+      clusterBkg: "surface",
+      clusterBorder: "border",
+      textColor: "fg",
+      noteBkgColor: "surface",
+      noteTextColor: "fg",
+      noteBorderColor: "border",
+    };
+    for (const [name, variable] of Object.entries(colors)) {
+      const value = style.getPropertyValue(`--${variable}`).trim();
+      if (value) vars[name] = value;
+    }
+    return vars;
+  }
+
   async function renderMermaid() {
-    const theme = mode === "dark" ? "dark" : "default";
+    const themeVariables = mermaidTheme();
+    const theme = JSON.stringify(themeVariables);
     const blocks = /** @type {NodeListOf<HTMLElement>} */ (contentEl.querySelectorAll(".mermaid-block"));
     const pending = Array.from(blocks).filter(
       (block) => renderedDiagrams.get(block) !== `${theme}\n${block.dataset.src}`,
@@ -579,9 +613,9 @@
       pending.forEach((block) => (block.innerHTML = errorHtml(err)));
       return;
     }
-    if (mermaidTheme !== theme) {
-      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme });
-      mermaidTheme = theme;
+    if (mermaidThemeKey !== theme) {
+      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables });
+      mermaidThemeKey = theme;
     }
 
     for (const block of pending) {
@@ -1029,7 +1063,10 @@
     let failures = 0;
 
     events.addEventListener("theme", (e) => applyTheme(JSON.parse(e.data)));
-    events.addEventListener("style", (e) => (userStyle.textContent = JSON.parse(e.data).css));
+    events.addEventListener("style", (e) => {
+      userStyle.textContent = JSON.parse(e.data).css;
+      queueMermaid(); // the stylesheet may change the colors diagrams use
+    });
     events.addEventListener("content", (e) => {
       const data = JSON.parse(e.data);
       documentName = data.name || "";

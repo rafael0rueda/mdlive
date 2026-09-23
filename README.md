@@ -15,7 +15,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - An outline of the headings next to the preview, marking the section you are in
 - Code highlighting (highlight.js) using your colorscheme's syntax colors,
   with line numbers and a copy button on code blocks
-- Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams
+- Math with KaTeX (`$inline$` and `$$block$$`) and Mermaid diagrams in your colorscheme's colors
 - Task lists you can tick in the preview: the click changes `[ ]` to `[x]` in the buffer
 - Tables, heading anchors, footnotes, `:emoji:` shortcodes and
   relative images

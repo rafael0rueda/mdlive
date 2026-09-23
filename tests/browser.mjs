@@ -105,6 +105,41 @@ try {
     features,
   );
   check("tab title is the file name", features.title === "demo.md · mdlive", features.title);
+
+  // Diagrams take the page's colors, and follow them when the colorscheme changes.
+  const diagramColors = () =>
+    page.eval(`(() => {
+      const probe = document.createElement("span");
+      document.body.append(probe);
+      const rgb = (name) => {
+        probe.style.color = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return getComputedStyle(probe).color;
+      };
+      const svg = document.querySelector(".mermaid-block svg");
+      const colors = {
+        node: svg && getComputedStyle(svg.querySelector(".node rect, .node polygon")).fill,
+        link: svg && getComputedStyle(svg.querySelector(".flowchart-link")).stroke,
+        surface: rgb("--surface"),
+        muted: rgb("--muted"),
+      };
+      probe.remove();
+      return colors;
+    })()`);
+  let colors = await diagramColors();
+  check(
+    "diagrams use the colors of the page",
+    colors.node === colors.surface && colors.link === colors.muted,
+    colors,
+  );
+  const firstSurface = colors.surface;
+  await nvim.lua(`vim.o.background = vim.o.background == "dark" and "light" or "dark"`);
+  colors = await waitFor(async () => {
+    const now = await diagramColors();
+    return now.surface !== firstSurface && now.node === now.surface && now;
+  });
+  check("diagrams are drawn again when the colorscheme changes", Boolean(colors), await diagramColors());
+  await nvim.lua(`vim.o.background = vim.o.background == "dark" and "light" or "dark"`);
+  await waitFor(async () => (await diagramColors()).node === firstSurface);
   const imageLoaded = await waitFor(() => page.eval(`document.querySelector('img[alt="Local image"]')?.naturalWidth > 0`));
   check("relative images load through the token URL", imageLoaded);
 
