@@ -17,7 +17,7 @@
   let cursor = null;
   let documentName = "";
   let lastText = null;
-  const settings = { lineNumbers: true };
+  const settings = { lineNumbers: true, scrollEditor: false };
   // Arrived through a link like guide.md#install: scroll there instead of to the cursor.
   let pendingAnchor = location.hash.length > 1 ? safeDecode(location.hash.slice(1)) : null;
   let ignoreCursor = pendingAnchor !== null;
@@ -807,7 +807,55 @@
       y = cursorY - height * 0.8 * fraction;
     }
     window.scrollTo({ top: Math.max(0, y), behavior: "instant" });
+    syncedY = window.scrollY;
   }
+
+  // Scrolling the preview by hand scrolls the Neovim window to the same place.
+  // Scrolls that scrollToLine() makes are not sent back, and while the page is
+  // scrolled by hand, the cursor events Neovim answers with do not move it.
+  let syncedY = -1; // where scrollToLine() last put the page
+  let scrolledByHandAt = 0;
+  /** @type {number | undefined} */
+  let editorScrollTimer;
+
+  // The source line at the top of the window: the inverse of lineOffset().
+  function topSourceLine() {
+    const blocks = lineBlocks();
+    const y = window.scrollY;
+    const top = (el) => el.getBoundingClientRect().top + y;
+    // Binary search for the first block that starts below the top of the window,
+    // give or take the fraction of a pixel a block scrolled to can be off by.
+    let lo = 0;
+    let hi = blocks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (top(blocks[mid].el) <= y + 1) lo = mid + 1;
+      else hi = mid;
+    }
+    const prev = blocks[lo - 1];
+    if (!prev) return 0;
+    const next = blocks[lo];
+    const start = top(prev.el);
+    const end = next ? top(next.el) : start + prev.el.getBoundingClientRect().height;
+    const endLine = next ? next.line : prev.line + 1;
+    const fraction = end > start ? Math.min(1, Math.max(0, (y - start) / (end - start))) : 0;
+    return Math.floor(prev.line + fraction * (endLine - prev.line));
+  }
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (!settings.scrollEditor || Math.abs(window.scrollY - syncedY) < 2) return;
+      scrolledByHandAt = performance.now();
+      if (editorScrollTimer !== undefined) return;
+      editorScrollTimer = setTimeout(() => {
+        editorScrollTimer = undefined;
+        // Nothing to say when the buffer is in no window: the page just scrolls.
+        post(`/scroll/${bufnr}?line=${topSourceLine()}`).catch(() => {});
+      }, 100);
+    },
+    { passive: true },
+  );
 
   // ------------------------------------------------------------------- theme
 
@@ -1076,6 +1124,7 @@
     });
     events.addEventListener("settings", (e) => {
       const data = JSON.parse(e.data);
+      settings.scrollEditor = data.scroll_editor === true;
       const outline = data.outline === true;
       if (outline !== outlineOption) {
         outlineOption = outline;
@@ -1096,7 +1145,8 @@
         return;
       }
       cursor = JSON.parse(e.data);
-      if (performance.now() - jumpedAt > 800) {
+      const now = performance.now();
+      if (now - jumpedAt > 800 && now - scrolledByHandAt > 800) {
         pendingScroll = true;
         scheduleUpdate();
       }

@@ -9,6 +9,9 @@ can change or remove features.
 
 ### Added
 
+- Scrolling the preview by hand scrolls the Neovim window to the same
+  place; the cursor only moves to stay in view, as with CTRL-E. The
+  `scroll_editor` option turns it off
 - The `css` option adds a stylesheet of your own to the preview and to
   exports. Saving it in Neovim restyles the open previews
 - Wiki links: `[[note]]`, `[[note#Heading]]`, `[[note|label]]` and

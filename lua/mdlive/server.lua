@@ -13,6 +13,7 @@ local M = {}
 ---@field on_open_link fun(bufnr: integer, path: string, wiki: boolean): string|nil, string|nil Handles a clicked markdown link, a wiki link when `wiki` is set; returns the preview path of the opened file.
 ---@field on_jump fun(bufnr: integer, line: integer|nil): true|nil, string|nil Handles a double-clicked block; `line` is 0-based.
 ---@field on_task fun(bufnr: integer, line: integer|nil, checked: boolean|nil): true|nil, string|nil Handles a clicked task list checkbox; `line` is 0-based.
+---@field on_scroll fun(bufnr: integer, line: integer|nil): true|nil, string|nil Handles a preview scrolled by hand; `line` is the 0-based source line at its top.
 ---@field on_export fun(id: integer, html: string, err: string|nil): true|nil, string|nil Handles the rendered page of a pending export.
 
 local source = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p")
@@ -307,17 +308,19 @@ local function post(sock, path, target, headers, body)
   if action == "export" then
     -- /export/<id>[?error=]: the rendered page for a pending export.
     result, err = h.on_export(id, body, query_param(target, "error"))
-  elseif action == "open" or action == "jump" or action == "task" then
+  elseif action == "open" or action == "jump" or action == "task" or action == "scroll" then
     if not h.is_previewed(id) then
       return json(sock, "404 Not Found", { error = "no preview for this buffer" })
     end
     if action == "open" then
       -- /open/<bufnr>?path=[&wiki=1]: a relative markdown or wiki link was clicked.
       result, err = h.on_open_link(id, query_param(target, "path") or "", query_param(target, "wiki") == "1")
-    elseif action == "jump" then
+    elseif action == "jump" or action == "scroll" then
       -- /jump/<bufnr>?line=: a block was double-clicked.
+      -- /scroll/<bufnr>?line=: the preview was scrolled by hand to this line.
       local line = query_param(target, "line")
-      result, err = h.on_jump(id, line and line:match("^%d+$") and tonumber(line))
+      line = line and line:match("^%d+$") and tonumber(line)
+      result, err = (action == "jump" and h.on_jump or h.on_scroll)(id, line)
     else
       -- /task/<bufnr>?line=&checked=: a task list checkbox was clicked.
       local line = query_param(target, "line")

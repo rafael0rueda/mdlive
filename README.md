@@ -10,8 +10,9 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Pure Lua: the HTTP server runs inside Neovim (`vim.uv`), nothing to install
 - Updates while typing (debounced), pushed with Server-Sent Events
 - One tab follows you: switching to another markdown buffer switches the preview
-- Scroll sync with the window and cursor, and double-click the preview to
-  jump to the source line in Neovim
+- Scroll sync both ways: the preview follows the window and cursor, and
+  scrolling the preview scrolls the window. Double-click the preview to jump
+  to the source line in Neovim
 - An outline of the headings next to the preview, marking the section you are in
 - Code highlighting (highlight.js) using your colorscheme's syntax colors,
   with line numbers and a copy button on code blocks
@@ -105,6 +106,7 @@ require("mdlive").setup({
   filetypes = { "markdown" },
   follow = true,        -- one tab switches to the markdown buffer you are in
   scroll_sync = true,   -- scroll the preview with the cursor
+  scroll_editor = true, -- with scroll_sync, scrolling the preview scrolls the window
   follow_theme = true,  -- use the Neovim colorscheme in the preview
   code_line_numbers = true, -- line numbers on code blocks with more than one line
   outline = false,      -- open the outline of the headings (the ☰ button toggles it)
@@ -164,8 +166,9 @@ for example a README in a repository you just cloned:
   are only served for buffers that are being previewed.
 - The server listens on `127.0.0.1` and rejects requests with a non-local
   `Host` header. Requests that act in Neovim (opening a linked file, moving
-  the cursor, ticking a task, saving an export) need a same-origin request
-  with a custom header, so other websites cannot trigger them.
+  the cursor, scrolling the window, ticking a task, saving an export) need a
+  same-origin request with a custom header, so other websites cannot trigger
+  them.
 - Exported HTML files include a Content-Security-Policy that blocks scripts
   wherever they are opened.
 

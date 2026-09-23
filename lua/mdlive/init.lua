@@ -92,6 +92,7 @@ local function send_settings(bufnr)
   server.broadcast(bufnr, "settings", {
     code_line_numbers = config.options.code_line_numbers,
     outline = config.options.outline,
+    scroll_editor = config.options.scroll_sync and config.options.scroll_editor,
   })
 end
 
@@ -285,6 +286,37 @@ local function jump(bufnr, line)
   return true
 end
 
+-- The preview was scrolled by hand: put source line `line` (0-based) at the top
+-- of the window. Like CTRL-E, the cursor only moves to stay in view.
+---@param bufnr integer
+---@param line integer|nil
+---@return true|nil ok
+---@return string|nil err
+local function scroll_to(bufnr, line)
+  if not line then
+    return nil, "invalid line"
+  end
+  if not (config.options.scroll_sync and config.options.scroll_editor) then
+    return nil, "scrolling from the preview is off"
+  end
+  local win = view_window(bufnr)
+  if not win then
+    return nil, "the buffer is not shown in any window"
+  end
+  local last = api.nvim_buf_line_count(bufnr)
+  local top = math.max(1, math.min(math.floor(line) + 1, last))
+  local height = api.nvim_win_get_height(win)
+  local so = math.min(vim.wo[win].scrolloff, math.floor((height - 1) / 2))
+  -- The lines the cursor may be on without Neovim scrolling back to it.
+  local low = top == 1 and 1 or math.min(top + so, last)
+  local high = math.max(low, math.min(top + height - 1 - so, last))
+  local cursor = api.nvim_win_get_cursor(win)[1]
+  api.nvim_win_call(win, function()
+    vim.fn.winrestview({ topline = top, lnum = math.max(low, math.min(cursor, high)) })
+  end)
+  return true
+end
+
 -- A task list checkbox was clicked in the preview: tick or clear the item on
 -- source line `line` (0-based). Only its [ ] or [x] changes, and only while the
 -- line is still a task item in the other state: otherwise the buffer changed
@@ -330,6 +362,7 @@ local function start_server()
     on_open_link = open_link,
     on_jump = jump,
     on_task = toggle_task,
+    on_scroll = scroll_to,
     on_export = export.receive,
     on_subscribe = function(bufnr)
       send_theme(bufnr)
