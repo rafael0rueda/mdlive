@@ -97,6 +97,13 @@ Run `/security-review` on changes in these areas.
   (`rafael0rueda/mdlive`) once CI passes. Check `origin/main` before
   branching or merging; PRs are merged on GitHub, so the local `main` can be
   behind.
+- `main` is protected, for admins too: no direct or force pushes, and a PR
+  needs every CI job but Neovim nightly to pass, on a branch that is up to
+  date with `main`. PRs are rebase-merged (no squash or merge commits), so
+  each commit lands as written, and merged branches are deleted.
+- Rebase-merging rewrites the commits, so a PR stacked on another one needs
+  `git rebase --onto origin/main <old base>` and a force push once the one
+  below is merged.
 - Commit messages: an imperative subject line, without a trailing period,
   that says what changed for the user. Then a blank line, a short paragraph
   on why when it isn't obvious, and `- ` bullets for the details, including
