@@ -208,7 +208,8 @@
       link.rel = "noopener noreferrer";
       if (!isRelative(href)) continue;
 
-      const [, path, hash = ""] = /^([^?#]*)(?:\?[^#]*)?(#.*)?$/.exec(href);
+      // `s`: an href from raw HTML may hold a line break, and must still match.
+      const [, path, hash = ""] = /^([^?#]*)(?:\?[^#]*)?(#.*)?$/s.exec(href);
       if (!path) continue;
       // Local files are served raw (keeping fragments like #page=3 for PDFs);
       // markdown files are opened in Neovim on click.
