@@ -9,6 +9,10 @@ can change or remove features.
 
 ### Added
 
+- Wiki links: `[[note]]`, `[[note#Heading]]`, `[[note|label]]` and
+  `[[#Heading]]`. Clicking one opens the note in Neovim; when it is not next
+  to the file, it is found by name under the directories the preview may
+  read. See `:help mdlive-wikilinks`
 - Task list checkboxes in the preview can be clicked: the `[ ]` or `[x]` of
   the item changes in the buffer. See `:help mdlive-tasks`
 

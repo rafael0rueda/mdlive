@@ -342,6 +342,21 @@ local ok, err = xpcall(function()
   code, body = get(session .. "/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
   check("link back reuses the demo buffer", code == 200 and vim.api.nvim_get_current_buf() == buf, body)
 
+  -- A wiki link names a note: when it is not next to the file, it is looked for
+  -- by name under the directories the preview may read, and nowhere else.
+  check("a plain link is not looked for by name", get(open .. "guide.md", same_origin) == 404)
+  code, body = get(open .. "guide.md&wiki=1", same_origin)
+  check("a wiki link finds a note by name", code == 200 and vim.api.nvim_get_current_buf() == guide, body)
+  get(session .. "/open/" .. guide .. "?path=..%2Fdemo.md", same_origin)
+  code, body = get(open .. "outside.md&wiki=1", same_origin)
+  check("a wiki link is not looked for outside those directories", code == 404, body)
+  local hidden = root .. "/.mdlive-smoke-" .. vim.fn.getpid()
+  vim.fn.mkdir(hidden, "p")
+  vim.fn.writefile({ "# Hidden" }, hidden .. "/hidden-note.md")
+  code = get(open .. "hidden-note.md&wiki=1", same_origin)
+  vim.fn.delete(hidden, "rf")
+  check("a wiki link skips hidden directories", code == 404 and vim.api.nvim_get_current_buf() == buf)
+
   -- Double-clicking a block in the preview moves the cursor to its source line.
   code, body = get(session .. "/jump/" .. buf .. "?line=15", same_origin)
   check("jump moves the cursor", code == 200 and vim.api.nvim_win_get_cursor(0)[1] == 16, body)

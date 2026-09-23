@@ -23,6 +23,8 @@ follows your cursor and uses the colors of your Neovim colorscheme.
 - Export the preview to a standalone HTML file with `:MdLiveExport`
 - Relative links: markdown files open in Neovim and the preview follows them;
   other files open in a new tab
+- Wiki links (`[[note]]`, `[[note#Heading|label]]`), found by name in your
+  project like in Obsidian
 - YAML (`---`) and TOML (`+++`) front matter shown as a collapsible block
 - Works offline: all browser libraries are bundled in `app/vendor`
 

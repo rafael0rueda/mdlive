@@ -96,6 +96,38 @@
   md.use(markdownitFootnote);
   md.use(markdownitEmoji);
 
+  // [[page]], [[page#Heading]], [[page|label]] and [[#Heading]]: links to other
+  // notes, as in Obsidian and other wikis. They become relative links, so they
+  // open in Neovim like any other: the page is a file next to this one, with .md
+  // added unless it names another kind of file, and Neovim also looks for it by
+  // name when it is not there (the "wikilink" class asks for that, see post()).
+  const attachment = /\.(?:pdf|png|jpe?g|gif|svg|webp|avif|mp4|webm|mov|mp3|ogg|wav|txt|csv|html?)$/i;
+  md.inline.ruler.before("link", "wikilink", (state, silent) => {
+    const start = state.pos;
+    if (state.src.charCodeAt(start) !== 0x5b || state.src.charCodeAt(start + 1) !== 0x5b) return false;
+    const end = state.src.indexOf("]]", start + 2);
+    if (end < 0) return false;
+    const inner = state.src.slice(start + 2, end);
+    if (!inner.trim() || /[[\]\n]/.test(inner)) return false;
+    if (!silent) {
+      const bar = inner.indexOf("|");
+      const target = (bar < 0 ? inner : inner.slice(0, bar)).trim();
+      const label = bar < 0 ? target : inner.slice(bar + 1).trim();
+      const hashAt = target.indexOf("#");
+      const page = (hashAt < 0 ? target : target.slice(0, hashAt)).trim();
+      const heading = hashAt < 0 ? "" : target.slice(hashAt + 1);
+      const file = page && (isMarkdown(page) || attachment.test(page) ? page : `${page}.md`);
+      const path = file ? file.split("/").map(encodeURIComponent).join("/") : "";
+      const open = state.push("link_open", "a", 1);
+      open.attrSet("href", path + (heading ? `#${encodeURIComponent(slugify(heading))}` : ""));
+      open.attrSet("class", "wikilink");
+      state.push("text", "", 0).content = label || target;
+      state.push("link_close", "a", -1);
+    }
+    state.pos = end + 2;
+    return true;
+  });
+
   // Tag every block with its source lines: data-line is where it starts (scroll
   // sync), data-source the lines its text comes from (double-click to jump).
   md.core.ruler.push("source_lines", (state) => {
@@ -916,7 +948,9 @@
     // Neovim changes buffer while handling this; don't also follow its "switch" event.
     navigating = true;
     try {
-      const data = await post(`/open/${bufnr}?path=${encodeURIComponent(openPath)}`);
+      // A wiki link names a note: Neovim may look for it by name.
+      const wiki = link.classList.contains("wikilink") ? "&wiki=1" : "";
+      const data = await post(`/open/${bufnr}?path=${encodeURIComponent(openPath)}${wiki}`);
       location.href = data.url + openHash;
     } catch (err) {
       navigating = false;
