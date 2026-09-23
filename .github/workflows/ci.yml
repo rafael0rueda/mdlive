@@ -29,6 +29,45 @@ jobs:
       - name: Help tags
         run: make helptags
 
+  # The same checks on macOS and Windows, with the stable release. Windows runs
+  # the smoke test only for now; the browser tests stop Chrome through Unix
+  # process groups.
+  platforms:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Tests (macOS)
+            os: macos-latest
+            target: test
+          - name: Browser tests (macOS)
+            os: macos-latest
+            target: browser
+          - name: Tests (Windows)
+            os: windows-latest
+            target: test
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - uses: actions/setup-node@v7
+        if: matrix.target == 'browser'
+        with:
+          node-version: 22
+
+      - name: make ${{ matrix.target }}
+        run: make ${{ matrix.target }}
+
   browser:
     name: Browser tests
     runs-on: ubuntu-latest

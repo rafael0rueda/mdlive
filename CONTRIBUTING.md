@@ -53,7 +53,10 @@ the `Makefile`, not in the workflow.
   versions are bumped there and CI follows
 
 CI runs the smoke test on Neovim v0.11.0, stable and nightly, so APIs newer
-than 0.11 need a fallback.
+than 0.11 need a fallback. It also runs the smoke test on macOS and Windows,
+and the browser tests on macOS, with the stable release: paths can have a
+drive letter and backslashes, and `/tmp` on macOS is a symlink. In the smoke
+test, `windows` tells which platform it runs on.
 
 ## What a change includes
 

@@ -79,6 +79,11 @@ function findChrome() {
       if (existsSync(join(dir, name))) return join(dir, name);
     }
   }
+  // On macOS the browsers are apps, not commands on PATH.
+  const apps = ["Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Contents/MacOS/Chromium"];
+  for (const app of apps) {
+    if (existsSync(join("/Applications", app))) return join("/Applications", app);
+  }
   throw new Error("Chrome or Chromium not found; set CHROME=/path/to/chrome");
 }
 
