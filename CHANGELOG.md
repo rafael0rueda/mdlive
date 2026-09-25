@@ -11,6 +11,8 @@ can change or remove features.
 
 - The preview follows the cursor in the first moment after it loads, instead
   of ignoring cursor moves for almost a second
+- Editing no longer makes the preview jump twice: the cursor position is
+  sent after the edited text, instead of being placed on the old text first
 
 ## [0.3.0] - 2026-09-23
 

@@ -66,10 +66,12 @@ local function view_window(bufnr)
   return vim.fn.win_findbuf(bufnr)[1]
 end
 
--- Sends the cursor and the visible lines of `win` (0-based).
+-- Sends the cursor and the visible lines of `win` (0-based). Not while a change
+-- waits to be sent: the page would place the new line numbers on the old text.
+-- The view goes out after the text instead.
 local function send_view(bufnr, win)
   win = win or view_window(bufnr)
-  if not (previews[bufnr] and config.options.scroll_sync and win) then
+  if not (previews[bufnr] and config.options.scroll_sync and win) or previews[bufnr].timer:is_active() then
     return
   end
   server.broadcast(bufnr, "cursor", {
@@ -167,6 +169,7 @@ local function attach(bufnr)
         0,
         vim.schedule_wrap(function()
           send_content(bufnr)
+          send_view(bufnr)
         end)
       )
     end,
