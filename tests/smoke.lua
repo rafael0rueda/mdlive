@@ -233,6 +233,12 @@ local ok, err = xpcall(function()
   check("stream sends initial content", events:find("# mdlive demo", 1, true))
   check("stream sends edited content", events:find("# Edited live", 1, true))
   check("stream sends cursor", events:find('"line":2', 1, true), events:match("event: cursor\ndata: [^\n]*"))
+  -- The cursor moved while the edit waited to be sent: its line numbers belong to the new text.
+  check(
+    "a cursor moved during an edit is sent after the edit",
+    (events:find('"line":2', 1, true) or 0) > (events:find("# Edited live", 1, true) or math.huge),
+    events
+  )
   local view = events:match("event: cursor\ndata: ([^\n]*)")
   view = view and vim.json.decode(view)
   check(
