@@ -7,6 +7,11 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Fixed
+
+- The preview follows the cursor in the first moment after it loads, instead
+  of ignoring cursor moves for almost a second
+
 ## [0.3.0] - 2026-09-23
 
 ### Added

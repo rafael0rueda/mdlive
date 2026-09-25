@@ -305,6 +305,20 @@ try {
 
   // Scroll sync --------------------------------------------------------------
 
+  // Cursor events that arrive right after the page loads are not ignored. The
+  // diagram is drawn first: drawing it scrolls to the cursor again.
+  await nvim.keys("<Esc>gg");
+  await waitFor(() => page.eval("scrollY === 0"));
+  await page.eval("window.beforeReload = true; location.reload()");
+  await waitFor(() => page.eval(`!window.beforeReload && document.querySelector(".mermaid-block svg") !== null`), {
+    interval: 20,
+  });
+  const loadedFor = await page.eval("Math.round(performance.now())");
+  await nvim.keys("/^## Diagram<CR>");
+  check("the preview follows the cursor right after it loads", await waitFor(() => page.eval("scrollY > 0")), {
+    loadedFor,
+  });
+
   await nvim.keys("<Esc>gg");
   await waitFor(() => page.eval("scrollY === 0"));
   await nvim.keys("/^## Diagram<CR>");

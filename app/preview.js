@@ -22,7 +22,7 @@
   let pendingAnchor = location.hash.length > 1 ? safeDecode(location.hash.slice(1)) : null;
   let ignoreCursor = pendingAnchor !== null;
   // After a double-click jump, Neovim's cursor event should not scroll the page away.
-  let jumpedAt = 0;
+  let jumpedAt = -Infinity;
   const themeKeys = new Set();
 
   root.dataset.theme = mode;
@@ -814,7 +814,7 @@
   // Scrolls that scrollToLine() makes are not sent back, and while the page is
   // scrolled by hand, the cursor events Neovim answers with do not move it.
   let syncedY = -1; // where scrollToLine() last put the page
-  let scrolledByHandAt = 0;
+  let scrolledByHandAt = -Infinity;
   /** @type {number | undefined} */
   let editorScrollTimer;
 
