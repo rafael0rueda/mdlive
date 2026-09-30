@@ -37,6 +37,8 @@ libraries are bundled in `app/vendor`.
 - `scripts/vendor.mjs` and `scripts/vendor.json`: the npm packages that
   `app/vendor` comes from, pinned by version and integrity hash, and the
   SHA-256 of every file they provide.
+- `.github/`: the CI and release workflows, the issue forms, and Dependabot,
+  which opens pull requests that update the GitHub Actions the workflows use.
 
 ## Checks
 

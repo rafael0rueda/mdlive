@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest something mdlive could do
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposal
+      description: How mdlive could help, such as a command, an option or something in the preview.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Alternatives
+      description: Other ways to get there, including other plugins that do it.
