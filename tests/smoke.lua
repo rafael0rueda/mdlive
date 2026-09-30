@@ -541,6 +541,14 @@ local ok, err = xpcall(function()
   messages = {}
   vim.cmd("MdLiveExport " .. export_path)
   check("export refuses to overwrite", (messages[1] or ""):find("exists", 1, true), messages[1])
+  -- The file name ends at |, which starts the next command.
+  messages, vim.g.mdlive_bar = {}, nil
+  vim.cmd("MdLiveExport " .. export_path .. " | let g:mdlive_bar = 1")
+  check(
+    "MdLiveExport can be followed by another command",
+    (messages[1] or ""):find("exists", 1, true) and vim.g.mdlive_bar == 1,
+    messages[1]
+  )
   exports_done = {}
   local refused, refused_err = require("mdlive").export(buf, { path = export_path }, on_export_done)
   vim.wait(500, function()
@@ -668,6 +676,10 @@ local ok, err = xpcall(function()
   check("MdLiveToggle starts the preview", mdlive.is_enabled({ buf = guide }))
   vim.cmd("MdLiveToggle")
   check("MdLiveToggle stops the preview", not mdlive.is_enabled({ buf = guide }) and mdlive.is_enabled({ buf = buf }))
+  vim.g.mdlive_bar = nil
+  vim.cmd("MdLiveToggle | let g:mdlive_bar = 1")
+  check("commands can be followed by another command", mdlive.is_enabled({ buf = guide }) and vim.g.mdlive_bar == 1)
+  vim.cmd("MdLiveToggle")
   for _, name in ipairs({ "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveUrl", "MdLiveExport" }) do
     local rhs = vim.fn.maparg("<Plug>(" .. name .. ")", "n")
     check("<Plug>(" .. name .. ") runs :" .. name, rhs == "<Cmd>" .. name .. "<CR>", rhs)

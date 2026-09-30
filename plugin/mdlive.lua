@@ -3,8 +3,10 @@ if vim.g.loaded_mdlive then
 end
 vim.g.loaded_mdlive = true
 
--- Each command also gets a Normal mode <Plug>(Name) mapping to bind to your own keys.
+-- Each command also gets a Normal mode <Plug>(Name) mapping to bind to your own
+-- keys, and can be followed by | and another command.
 local function command(name, fn, opts)
+  opts.bar = true
   vim.api.nvim_create_user_command(name, fn, opts)
   vim.keymap.set("n", "<Plug>(" .. name .. ")", "<Cmd>" .. name .. "<CR>", { desc = opts.desc })
 end

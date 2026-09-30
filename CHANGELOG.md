@@ -9,6 +9,9 @@ can change or remove features.
 
 ### Fixed
 
+- The commands can be followed by `|` and another command. `:MdLiveExport`
+  took the rest of the line as the file name, and the others failed with
+  E488
 - The preview follows the cursor in the first moment after it loads, instead
   of ignoring cursor moves for almost a second
 - Editing no longer makes the preview jump twice: the cursor position is
