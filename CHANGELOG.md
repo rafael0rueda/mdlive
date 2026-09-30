@@ -7,6 +7,8 @@ can change or remove features.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-30
+
 ### Changed
 
 - The commands are subcommands of `:MdLive`: `:MdLive stop`, `:MdLive toggle`,
@@ -127,7 +129,8 @@ Markdown files are treated as untrusted input:
 - `open()`, `close()`, `toggle()` and `is_open()` still work, warn once, and
   will be removed in 1.0. Use `enable()` and `is_enabled()`
 
-[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/rafael0rueda/mdlive/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rafael0rueda/mdlive/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rafael0rueda/mdlive/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/rafael0rueda/mdlive/compare/v0.1.0...v0.1.1
