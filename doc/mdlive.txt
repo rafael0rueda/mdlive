@@ -50,6 +50,9 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
 ==============================================================================
 4. COMMANDS                                                  *mdlive-commands*
 
+Each command can be followed by |:bar| and another command, as in
+`:write | MdLiveExport!`.
+
 :MdLive                                                              *:MdLive*
     Starts the preview of the current buffer and opens it in the browser.
     If a tab is already connected to the buffer, only its URL is shown.
