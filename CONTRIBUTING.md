@@ -60,8 +60,9 @@ the `Makefile`, not in the workflow.
   no network; CI also rebuilds `app/vendor` from npm with `make vendor` and
   fails if anything differs
 - `make tools`: installs the stylua and lua-language-server versions pinned
-  in the `Makefile` into `~/.local/bin` (`TOOLS=/other/prefix` to change it);
-  versions are bumped there and CI follows
+  in the `Makefile` into `~/.local/bin` (`TOOLS=/other/prefix` to change it),
+  on Linux or macOS, x86_64 or arm64; versions are bumped there and CI
+  follows
 
 CI runs the smoke test on Neovim v0.11.0, stable and nightly, so APIs newer
 than 0.11 need a fallback. It also runs the smoke test on macOS and Windows,
@@ -81,6 +82,8 @@ test, `windows` tells which platform it runs on.
 - Lua code has LuaCATS annotations (`---@param`, `---@class`) that stay
   accurate: the type check runs at `Warning`. Style is stylua
   (`.stylua.toml`: 2 spaces, 120 columns, double quotes, always parentheses).
+  `.editorconfig`, which Neovim applies by itself, sets the indentation and
+  line endings of the other files.
 - Augroups and server handlers are named following Neovim's dev guide.
 - Errors go back to Lua callers as `nil, err`; the commands report them with
   `vim.notify()`, prefixed with `[mdlive]`.

@@ -9,6 +9,22 @@ TYPESCRIPT_VERSION = 7.0.2
 # Where `make tools` installs: $(TOOLS)/bin must be on PATH.
 TOOLS ?= $(HOME)/.local
 
+# The builds `make tools` downloads: Linux or macOS, on x86_64 or arm64.
+ifeq ($(shell uname -s),Darwin)
+  STYLUA_OS = macos
+  LUALS_OS = darwin
+else
+  STYLUA_OS = linux
+  LUALS_OS = linux
+endif
+ifneq ($(filter arm64 aarch64,$(shell uname -m)),)
+  STYLUA_ARCH = aarch64
+  LUALS_ARCH = arm64
+else
+  STYLUA_ARCH = x86_64
+  LUALS_ARCH = x64
+endif
+
 .PHONY: check test browser lint format typecheck typecheck-lua typecheck-js helptags vendor vendor-check vendor-update tools release-notes
 
 check: test browser lint typecheck helptags vendor-check
@@ -58,10 +74,10 @@ vendor-update:
 tools:
 	mkdir -p "$(TOOLS)/bin" "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)"
 	curl -fsSL -o "$(TOOLS)/stylua.zip" \
-	  "https://github.com/JohnnyMorganz/StyLua/releases/download/v$(STYLUA_VERSION)/stylua-linux-x86_64.zip"
+	  "https://github.com/JohnnyMorganz/StyLua/releases/download/v$(STYLUA_VERSION)/stylua-$(STYLUA_OS)-$(STYLUA_ARCH).zip"
 	unzip -o -q "$(TOOLS)/stylua.zip" stylua -d "$(TOOLS)/bin"
 	rm "$(TOOLS)/stylua.zip"
-	curl -fsSL "https://github.com/LuaLS/lua-language-server/releases/download/$(LUALS_VERSION)/lua-language-server-$(LUALS_VERSION)-linux-x64.tar.gz" \
+	curl -fsSL "https://github.com/LuaLS/lua-language-server/releases/download/$(LUALS_VERSION)/lua-language-server-$(LUALS_VERSION)-$(LUALS_OS)-$(LUALS_ARCH).tar.gz" \
 	  | tar -xz -C "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)"
 	ln -sf "$(TOOLS)/share/lua-language-server-$(LUALS_VERSION)/bin/lua-language-server" "$(TOOLS)/bin/lua-language-server"
 	"$(TOOLS)/bin/stylua" --version
