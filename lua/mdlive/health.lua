@@ -114,7 +114,7 @@ local function check_browser()
   health.start("mdlive: browser")
   local browser = require("mdlive.config").options.browser
   if browser == false then
-    return health.ok("Opening no browser (`browser = false`): :MdLiveUrl shows the URL to open")
+    return health.ok("Opening no browser (`browser = false`): :MdLive url shows the URL to open")
   end
   if vim.env.SSH_CONNECTION or vim.env.SSH_TTY then
     health.info("Neovim runs over SSH: to use the browser of the machine you connect from, see :help mdlive-remote")

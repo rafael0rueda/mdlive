@@ -8,12 +8,14 @@ libraries are bundled in `app/vendor`.
 
 ## Layout
 
-- `plugin/mdlive.lua`: the commands and their `<Plug>(Name)` mappings. It
-  stays small; everything goes through `require("mdlive")`.
+- `plugin/mdlive.lua`: `:MdLive`, the `<Plug>(Name)` mappings and the
+  deprecated commands. It stays small; everything goes through `require()`.
+- `lua/mdlive/command.lua`: the subcommands of `:MdLive`, their completion,
+  and the deprecated commands that run them.
 - `lua/mdlive/init.lua`: the public Lua API (`setup`, `enable`,
   `is_enabled`, `export`), the previews and their buffer autocmds, and follow
-  mode. Deprecated names (`open()`, ...) go through `deprecate()` and are
-  listed under `:help mdlive-deprecated`.
+  mode. Deprecated names (`open()`, `:MdLiveStop`, ...) go through
+  `vim.deprecate()` and are listed under `:help mdlive-deprecated`.
 - `lua/mdlive/browser.lua`: opening the preview in a browser, through a
   redirect file that keeps the token out of the process list.
 - `lua/mdlive/export.lua`: export jobs, from the file they write to until the

@@ -7,6 +7,19 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Changed
+
+- The commands are subcommands of `:MdLive`: `:MdLive stop`, `:MdLive toggle`,
+  `:MdLive url` and `:MdLive[!] export [file]`. `:MdLive` alone still starts
+  the preview, and `<Tab>` completes the subcommands and, after `export`, file
+  names. The `<Plug>` mappings keep their names. See `:help :MdLive`
+
+### Deprecated
+
+- `:MdLiveStop`, `:MdLiveToggle`, `:MdLiveUrl` and `:MdLiveExport`: use the
+  `:MdLive` subcommands. They still work, warn once, and will be removed in
+  1.0. See `:help mdlive-deprecated`
+
 ### Fixed
 
 - The commands can be followed by `|` and another command. `:MdLiveExport`

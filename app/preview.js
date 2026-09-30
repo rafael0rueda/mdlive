@@ -968,7 +968,7 @@
     ].join("\n");
   }
 
-  // :MdLiveExport asked for the rendered page; Neovim writes it to disk.
+  // :MdLive export asked for the rendered page; Neovim writes it to disk.
   async function exportPage({ id, base }) {
     let body = "";
     let query = "";

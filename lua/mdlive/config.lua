@@ -45,7 +45,7 @@ M.defaults = {
   file_root = nil,
   -- nil: system default (vim.ui.open). A string ("firefox"), a command list
   -- ({ "firefox", "--new-window" }) or a function(url) are also accepted.
-  -- false opens nothing, for example over SSH: open the URL :MdLiveUrl shows.
+  -- false opens nothing, for example over SSH: open the URL :MdLive url shows.
   browser = nil,
   -- The preview URL contains a token, and command lines are readable by every
   -- user on the machine. Start the browser on a file that redirects to the
