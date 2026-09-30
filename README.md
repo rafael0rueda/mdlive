@@ -22,7 +22,7 @@ follows your cursor and uses the colors of your Neovim colorscheme.
   relative images
 - GitHub alerts (`> [!NOTE]`, `[!TIP]`, `[!WARNING]`, ...) in your diagnostic colors
 - Your own stylesheet on top (`css`), applied again when you save it
-- Export the preview to a standalone HTML file with `:MdLiveExport`
+- Export the preview to a standalone HTML file with `:MdLive export`
 - Relative links: markdown files open in Neovim and the preview follows them;
   other files open in a new tab
 - Wiki links (`[[note]]`, `[[note#Heading|label]]`), found by name in your
@@ -43,7 +43,7 @@ Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
   "rafael0rueda/mdlive",
   version = "*", -- the latest release; remove it to follow main
   ft = "markdown",
-  cmd = { "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveExport" },
+  cmd = "MdLive",
   opts = {},
 }
 ```
@@ -67,18 +67,22 @@ require("mdlive").setup()
 
 ## Usage
 
-| Command                   | Action                                                            |
-| ------------------------- | ----------------------------------------------------------------- |
-| `:MdLive`                 | Start the preview and open it in the browser (reuses an open tab) |
-| `:MdLiveStop`             | Stop the preview (in follow mode, from any buffer)                |
-| `:MdLiveToggle`           | Toggle the preview                                                |
-| `:MdLiveUrl`              | Show the preview URL and copy it to the clipboard                 |
-| `:MdLiveExport[!] [file]` | Save the preview as HTML, next to the file by default (`!` overwrites) |
+| Command                    | Action                                                                 |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `:MdLive`                  | Start the preview and open it in the browser (reuses an open tab)      |
+| `:MdLive stop`             | Stop the preview (in follow mode, from any buffer)                     |
+| `:MdLive toggle`           | Toggle the preview                                                     |
+| `:MdLive url`              | Show the preview URL and copy it to the clipboard                      |
+| `:MdLive[!] export [file]` | Save the preview as HTML, next to the file by default (`!` overwrites) |
+
+`:MdLive` alone is `:MdLive start`, and `<Tab>` completes the subcommands. The
+commands of earlier versions (`:MdLiveStop`, `:MdLiveToggle`, `:MdLiveUrl` and
+`:MdLiveExport`) still work until 1.0, with a warning.
 
 To get a PDF, print the preview from the browser.
 
-mdlive maps no keys. Each command has a Normal mode mapping to bind to your own
-keys: `<Plug>(MdLive)`, `<Plug>(MdLiveStop)`, `<Plug>(MdLiveToggle)`,
+mdlive maps no keys. Each subcommand has a Normal mode mapping to bind to your
+own keys: `<Plug>(MdLive)`, `<Plug>(MdLiveStop)`, `<Plug>(MdLiveToggle)`,
 `<Plug>(MdLiveUrl)` and `<Plug>(MdLiveExport)`.
 
 ```lua
@@ -128,7 +132,7 @@ require("mdlive").setup({ port = 8090, browser = false })
 ssh -L 8090:127.0.0.1:8090 user@host
 ```
 
-Then `:MdLive` and `:MdLiveUrl`, which shows the URL and copies it to your
+Then `:MdLive` and `:MdLive url`, which shows the URL and copies it to your
 clipboard in terminals that support OSC 52. See `:help mdlive-remote`.
 
 ## How it works
@@ -144,7 +148,7 @@ during a render are merged, so a 10,000-line document updates in about 0.1 s.
 Every block carries its source line, which is how the cursor position maps to
 a scroll position. Theme colors are read from highlight groups (`Normal`,
 `@keyword`, `@string`, `@markup.heading.1`, ...) and sent again on
-`ColorScheme`. `:MdLiveExport` asks the open tab for the rendered page, with
+`ColorScheme`. `:MdLive export` asks the open tab for the rendered page, with
 styles and fonts inlined, and Neovim writes it to disk.
 
 ## Security

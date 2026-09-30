@@ -74,7 +74,7 @@ function M.target(bufnr, opts)
   if not path or path == "" then
     local name = vim.api.nvim_buf_get_name(bufnr)
     if name == "" then
-      return path, "the buffer has no name, give a file: :MdLiveExport {file}"
+      return path, "the buffer has no name, give a file: :MdLive export {file}"
     end
     path = vim.fn.fnamemodify(name, ":r") .. ".html"
   end
@@ -84,7 +84,7 @@ function M.target(bufnr, opts)
     return path, path .. " is a directory"
   end
   if stat and not opts.force then
-    return path, vim.fn.fnamemodify(path, ":~:.") .. " exists (add ! to overwrite)"
+    return path, vim.fn.fnamemodify(path, ":~:.") .. " exists (:MdLive! export overwrites it)"
   end
   if vim.fn.isdirectory(vim.fs.dirname(path)) == 0 then
     return path, "directory " .. vim.fs.dirname(path) .. " does not exist"

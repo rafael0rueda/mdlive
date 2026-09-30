@@ -539,14 +539,22 @@ local ok, err = xpcall(function()
   check("export answers each request once", get(session .. "/export/" .. (job and job.id or 0), send_page) == 404)
 
   messages = {}
-  vim.cmd("MdLiveExport " .. export_path)
+  vim.cmd("MdLive export " .. export_path)
   check("export refuses to overwrite", (messages[1] or ""):find("exists", 1, true), messages[1])
   -- The file name ends at |, which starts the next command.
   messages, vim.g.mdlive_bar = {}, nil
-  vim.cmd("MdLiveExport " .. export_path .. " | let g:mdlive_bar = 1")
+  vim.cmd("MdLive export " .. export_path .. " | let g:mdlive_bar = 1")
   check(
-    "MdLiveExport can be followed by another command",
+    ":MdLive export can be followed by another command",
     (messages[1] or ""):find("exists", 1, true) and vim.g.mdlive_bar == 1,
+    messages[1]
+  )
+  -- % and ~ in the file name are expanded, as for :write.
+  messages = {}
+  vim.cmd("MdLive export %:p:h/missing/out.html")
+  check(
+    ":MdLive export expands % in the file name",
+    (messages[1] or ""):find("missing does not exist", 1, true) and not messages[1]:find("%", 1, true),
     messages[1]
   )
   exports_done = {}
@@ -626,11 +634,11 @@ local ok, err = xpcall(function()
     float_events
   )
 
-  -- :MdLiveStop from a buffer that is not previewed stops the followed preview (and any other).
+  -- :MdLive stop from a buffer that is not previewed stops the followed preview (and any other).
   vim.cmd.enew()
-  vim.cmd("MdLiveStop")
+  vim.cmd("MdLive stop")
   vim.wait(400)
-  check("MdLiveStop stops the followed preview from anywhere", not require("mdlive").is_enabled({ buf = guide }))
+  check(":MdLive stop stops the followed preview from anywhere", not require("mdlive").is_enabled({ buf = guide }))
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)
 
@@ -667,22 +675,76 @@ local ok, err = xpcall(function()
     "previews two buffers without follow mode",
     mdlive.is_enabled({ buf = buf }) and mdlive.is_enabled({ buf = guide })
   )
-  vim.cmd("MdLiveStop")
+  vim.cmd("MdLive stop")
   check(
-    "MdLiveStop stops only the current buffer's preview",
+    ":MdLive stop stops only the current buffer's preview",
     mdlive.is_enabled({ buf = buf }) and not mdlive.is_enabled({ buf = guide })
   )
-  vim.cmd("MdLiveToggle")
-  check("MdLiveToggle starts the preview", mdlive.is_enabled({ buf = guide }))
-  vim.cmd("MdLiveToggle")
-  check("MdLiveToggle stops the preview", not mdlive.is_enabled({ buf = guide }) and mdlive.is_enabled({ buf = buf }))
+  vim.cmd("MdLive toggle")
+  check(":MdLive toggle starts the preview", mdlive.is_enabled({ buf = guide }))
+  vim.cmd("MdLive toggle")
+  check(":MdLive toggle stops the preview", not mdlive.is_enabled({ buf = guide }) and mdlive.is_enabled({ buf = buf }))
+  vim.cmd("MdLive start")
+  check(":MdLive start starts the preview", mdlive.is_enabled({ buf = guide }))
+  vim.cmd("MdLive stop")
   vim.g.mdlive_bar = nil
-  vim.cmd("MdLiveToggle | let g:mdlive_bar = 1")
-  check("commands can be followed by another command", mdlive.is_enabled({ buf = guide }) and vim.g.mdlive_bar == 1)
-  vim.cmd("MdLiveToggle")
-  for _, name in ipairs({ "MdLive", "MdLiveStop", "MdLiveToggle", "MdLiveUrl", "MdLiveExport" }) do
+  vim.cmd("MdLive toggle | let g:mdlive_bar = 1")
+  check(":MdLive can be followed by another command", mdlive.is_enabled({ buf = guide }) and vim.g.mdlive_bar == 1)
+  vim.cmd("MdLive toggle")
+
+  -- Mistakes are reported and do nothing.
+  local command_messages = {}
+  local real_command_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(command_messages, msg)
+  end
+  for _, line in ipairs({ "MdLive start now", "MdLive! stop", "MdLive! toggle", "MdLive! ", "MdLive nope" }) do
+    command_messages = {}
+    vim.cmd(line)
+    check(
+      ":" .. line .. " is reported and does nothing",
+      #command_messages == 1 and command_messages[1]:find("^%[mdlive%]") and not mdlive.is_enabled({ buf = guide }),
+      vim.inspect(command_messages)
+    )
+  end
+  vim.notify = real_command_notify
+  check(
+    "an unknown subcommand lists the right ones",
+    (command_messages[1] or ""):find("unknown subcommand `nope`, use export, start, stop, toggle, url", 1, true),
+    command_messages[1]
+  )
+
+  -- <Tab> completes the subcommands, then file names after export.
+  check(
+    ":MdLive completes the subcommands",
+    vim.deep_equal(vim.fn.getcompletion("MdLive ", "cmdline"), { "export", "start", "stop", "toggle", "url" })
+      and vim.deep_equal(vim.fn.getcompletion("MdLive! t", "cmdline"), { "toggle" })
+      and vim.deep_equal(vim.fn.getcompletion("write | MdLive s", "cmdline"), { "start", "stop" }),
+    vim.inspect(vim.fn.getcompletion("MdLive ", "cmdline"))
+  )
+  -- Relative to the working directory, the repository; Windows completes with backslashes.
+  local completed = vim.fn.getcompletion("MdLive export examples/de", "cmdline")
+  check(
+    ":MdLive export completes file names",
+    #completed == 1 and vim.fs.normalize(completed[1]) == "examples/demo.md",
+    vim.inspect(completed)
+  )
+  check(
+    "subcommands without a file complete nothing",
+    #vim.fn.getcompletion("MdLive stop ", "cmdline") == 0,
+    vim.inspect(vim.fn.getcompletion("MdLive stop ", "cmdline"))
+  )
+
+  for name, sub in pairs({
+    MdLive = "start",
+    MdLiveStop = "stop",
+    MdLiveToggle = "toggle",
+    MdLiveUrl = "url",
+    MdLiveExport = "export",
+  }) do
     local rhs = vim.fn.maparg("<Plug>(" .. name .. ")", "n")
-    check("<Plug>(" .. name .. ") runs :" .. name, rhs == "<Cmd>" .. name .. "<CR>", rhs)
+    check("<Plug>(" .. name .. ") runs :MdLive " .. sub, rhs == "<Cmd>MdLive " .. sub .. "<CR>", rhs)
   end
   vim.cmd([[execute "normal \<Plug>(MdLiveToggle)"]])
   check("<Plug>(MdLiveToggle) starts the preview", mdlive.is_enabled({ buf = guide }))
@@ -808,20 +870,20 @@ local ok, err = xpcall(function()
   vim.notify = function(msg)
     table.insert(url_messages, msg)
   end
-  vim.cmd("MdLiveUrl")
+  vim.cmd("MdLive url")
   local shown = table.concat(url_messages, "\n")
   check(
-    ":MdLiveUrl shows the URL and copies it to the clipboard",
+    ":MdLive url shows the URL and copies it to the clipboard",
     shown:find(preview_url, 1, true) and copied == preview_url,
     { shown = shown, copied = copied }
   )
   require("mdlive").enable(false)
   vim.wait(400)
   url_messages = {}
-  vim.cmd("MdLiveUrl")
+  vim.cmd("MdLive url")
   vim.notify = real_url_notify
   check(
-    ":MdLiveUrl reports a buffer without a preview",
+    ":MdLive url reports a buffer without a preview",
     table.concat(url_messages):find("no preview", 1, true),
     url_messages
   )
@@ -849,6 +911,37 @@ local ok, err = xpcall(function()
     "deprecated functions warn once each",
     select(2, deprecations:gsub("is deprecated", "")) == 4
       and deprecations:find("mdlive.open() is deprecated, use mdlive.enable() instead", 1, true),
+    deprecations
+  )
+
+  -- The commands :MdLive's subcommands replaced run them, and warn once each.
+  deprecation_messages = {}
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(deprecation_messages, msg)
+  end
+  vim.cmd("MdLiveToggle")
+  check("deprecated :MdLiveToggle starts the preview", mdlive.is_enabled({ buf = buf }))
+  vim.cmd("MdLiveUrl")
+  check(
+    "deprecated :MdLiveUrl shows the URL",
+    table.concat(deprecation_messages, "\n"):find(require("mdlive.server").url(buf), 1, true)
+  )
+  vim.cmd("MdLiveStop | MdLiveToggle | MdLiveStop")
+  check("deprecated :MdLiveStop stops the preview", not mdlive.is_enabled({ buf = buf }))
+  vim.cmd("MdLiveExport " .. sandbox .. "/missing/out.html | MdLiveExport! " .. sandbox .. "/missing/out.html")
+  vim.notify = real_notify_api
+  deprecations = table.concat(deprecation_messages, "\n")
+  check(
+    "deprecated :MdLiveExport exports to the file given",
+    select(2, deprecations:gsub("missing does not exist", "")) == 2,
+    deprecations
+  )
+  check(
+    "deprecated commands warn once each",
+    select(2, deprecations:gsub("is deprecated", "")) == 5
+      and deprecations:find(":MdLiveStop is deprecated, use :MdLive stop instead", 1, true)
+      and deprecations:find(":MdLiveExport is deprecated, use :MdLive! export instead", 1, true),
     deprecations
   )
   vim.wait(400)

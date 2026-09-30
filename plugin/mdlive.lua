@@ -3,39 +3,46 @@ if vim.g.loaded_mdlive then
 end
 vim.g.loaded_mdlive = true
 
--- Each command also gets a Normal mode <Plug>(Name) mapping to bind to your own
--- keys, and can be followed by | and another command.
-local function command(name, fn, opts)
-  opts.bar = true
-  vim.api.nvim_create_user_command(name, fn, opts)
-  vim.keymap.set("n", "<Plug>(" .. name .. ")", "<Cmd>" .. name .. "<CR>", { desc = opts.desc })
+-- :MdLive[!] [subcommand] [args], see lua/mdlive/command.lua. It can be
+-- followed by | and another command.
+vim.api.nvim_create_user_command("MdLive", function(args)
+  require("mdlive.command").run(args)
+end, {
+  nargs = "*",
+  bang = true,
+  bar = true,
+  complete = function(...)
+    return require("mdlive.command").complete(...)
+  end,
+  desc = "Markdown live preview: start, stop, toggle, url or export",
+})
+
+-- A Normal mode <Plug>(Name) mapping per subcommand, to bind to your own keys.
+for _, map in ipairs({
+  { "MdLive", "start", "Open a live browser preview of the current buffer" },
+  { "MdLiveStop", "stop", "Stop the live preview of the current buffer" },
+  { "MdLiveToggle", "toggle", "Toggle the live preview of the current buffer" },
+  { "MdLiveUrl", "url", "Show the URL of the preview and copy it to the clipboard" },
+  { "MdLiveExport", "export", "Export the preview of the current buffer to HTML" },
+}) do
+  vim.keymap.set("n", "<Plug>(" .. map[1] .. ")", "<Cmd>MdLive " .. map[2] .. "<CR>", { desc = map[3] })
 end
 
-command("MdLive", function()
-  require("mdlive").enable(true, { buf = 0 })
-end, { desc = "Open a live browser preview of the current buffer" })
-
-command("MdLiveStop", function()
-  local mdlive = require("mdlive")
-  -- From a buffer without a preview, this stops every preview, such as the one following you.
-  mdlive.enable(false, mdlive.is_enabled({ buf = 0 }) and { buf = 0 } or nil)
-end, { desc = "Stop the live preview of the current buffer" })
-
-command("MdLiveToggle", function()
-  local mdlive = require("mdlive")
-  mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 })
-end, { desc = "Toggle the live preview of the current buffer" })
-
-command("MdLiveUrl", function()
-  local url, err = require("mdlive").url()
-  if not url then
-    return vim.notify("[mdlive] " .. err, vim.log.levels.ERROR)
-  end
-  -- Over SSH, the clipboard can be the one of the machine you connect from (OSC 52).
-  local copied = vim.fn.has("clipboard") == 1 and pcall(vim.fn.setreg, "+", url)
-  vim.notify("[mdlive] " .. url .. (copied and " (copied to the clipboard)" or ""))
-end, { desc = "Show the URL of the preview and copy it to the clipboard" })
-
-command("MdLiveExport", function(args)
-  require("mdlive").export(0, { path = args.args, force = args.bang })
-end, { nargs = "?", bang = true, complete = "file", desc = "Export the preview of the current buffer to HTML" })
+-- Deprecated: the commands :MdLive's subcommands replace, removed in 1.0.
+for command, name in pairs({ MdLiveStop = "stop", MdLiveToggle = "toggle", MdLiveUrl = "url" }) do
+  vim.api.nvim_create_user_command(command, function(args)
+    require("mdlive.command").deprecated(command, name, args)
+  end, { bar = true, desc = "Deprecated: use :MdLive " .. name })
+end
+vim.api.nvim_create_user_command("MdLiveExport", function(args)
+  require("mdlive.command").deprecated("MdLiveExport", "export", args)
+end, {
+  nargs = "?",
+  bang = true,
+  bar = true,
+  -- A function rather than "file", which would expand the name before :MdLive export does.
+  complete = function(arglead)
+    return vim.fn.getcompletion(arglead, "file")
+  end,
+  desc = "Deprecated: use :MdLive export",
+})
