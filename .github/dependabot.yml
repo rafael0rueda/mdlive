@@ -1,0 +1,14 @@
+# Pull requests that update the GitHub Actions the workflows use. The npm
+# packages in app/vendor are pinned in scripts/vendor.json instead (see
+# CONTRIBUTING.md).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns: ["*"]

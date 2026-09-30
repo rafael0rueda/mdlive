@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in mdlive does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before reporting, update mdlive to the latest release and search the [existing issues](https://github.com/rafael0rueda/mdlive/issues).
+        A security problem is reported privately, through a [security advisory](https://github.com/rafael0rueda/mdlive/security/advisories/new), not here.
+
+  - type: textarea
+    attributes:
+      label: Description
+      description: What happens, and what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: With the minimal config below, and the Markdown that shows the problem if it matters.
+      placeholder: |
+        1. `nvim --clean -u repro.lua file.md`
+        2. `:MdLive`
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Minimal config
+      description: Save it as `repro.lua` and run `nvim --clean -u repro.lua file.md`. Add only the options needed to reproduce the problem.
+      render: lua
+      value: |
+        local path = vim.fn.fnamemodify(".repro/mdlive", ":p")
+        if not vim.uv.fs_stat(path) then
+          vim.fn.system({ "git", "clone", "--depth=1", "https://github.com/rafael0rueda/mdlive", path })
+        end
+        vim.opt.runtimepath:prepend(path)
+        require("mdlive").setup({
+          -- Only the options needed to reproduce the problem.
+        })
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Output of `:checkhealth mdlive`
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Output of `nvim --version`
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: mdlive version
+      description: A release such as `v0.3.0`, or the commit (`git rev-parse --short HEAD` in the plugin's directory).
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Operating system and browser
+      placeholder: Fedora 44, Firefox 150
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Screenshots, messages from `:messages`, or errors from the browser's console.
