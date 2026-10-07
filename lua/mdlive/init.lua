@@ -216,6 +216,9 @@ local function attach(bufnr)
   })
 end
 
+-- How many files and directories a wiki link is looked for in.
+local max_note_search = 20000
+
 local markdown_ext = { md = true, markdown = true, mdown = true, mkd = true, mkdn = true }
 
 -- A wiki link names a note rather than a path: when it is not next to the
@@ -230,10 +233,16 @@ local function find_note(rel, roots)
     local name = vim.fs.basename(dir)
     return not (name:sub(1, 1) == "." or name == "node_modules")
   end
+  -- A click must not make Neovim wait while a whole home directory is read.
+  local left = max_note_search
   for _, root in ipairs(roots) do
     for name, kind in vim.fs.dir(root, { depth = 20, skip = skip }) do
       if kind == "file" and ("/" .. name):sub(-#suffix) == suffix then
         return vim.fs.joinpath(root, name)
+      end
+      left = left - 1
+      if left <= 0 then
+        return nil
       end
     end
   end
@@ -284,6 +293,7 @@ local function open_link(from_buf, rel, wiki)
   if not previews[target] then
     attach(target)
   end
+  leaving[target] = nil
   return server.preview_path(target)
 end
 
@@ -403,7 +413,10 @@ local function start_server()
     end,
   })
   if not port then
-    return nil, "failed to start server: " .. tostring(err)
+    local address = ("%s:%d"):format(config.options.host, config.options.port)
+    -- A fixed port is taken while another Neovim previews with it.
+    local hint = config.options.port ~= 0 and " (`port = 0` in setup() picks a free port)" or ""
+    return nil, ("cannot listen on %s: %s%s"):format(address, tostring(err), hint)
   end
   return true
 end
@@ -500,13 +513,18 @@ local function start_preview(bufnr)
   end
   active = bufnr
   leaving[bufnr] = nil
-  local url = server.url(bufnr)
   if server.client_count(bufnr) > 0 then
-    notify("preview already open at " .. url)
+    notify(("preview of %s is already open"):format(buf_label(bufnr)))
     return true
   end
-  browser.open(url)
-  notify("previewing at " .. url)
+  local url = server.url(bufnr)
+  server.await_tab(bufnr)
+  -- The URL holds the token: it is only shown when it has to be opened by hand.
+  if browser.open(url) then
+    notify("previewing " .. buf_label(bufnr))
+  else
+    notify(("previewing %s at %s"):format(buf_label(bufnr), url))
+  end
   return true
 end
 

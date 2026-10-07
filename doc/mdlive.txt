@@ -59,7 +59,9 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
 
 :MdLive [start]                                                *:MdLive-start*
     Starts the preview of the current buffer and opens it in the browser.
-    If a tab is already connected to the buffer, only its URL is shown.
+    If a tab is already connected to the buffer, nothing is opened. The URL
+    is only shown when it has to be opened by hand: with `browser = false`,
+    or when the browser could not be started. |:MdLive-url| always shows it.
     With |mdlive-follow|, an open tab switches to the current buffer instead
     of a new tab being opened.
 
@@ -69,7 +71,8 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
     such as the one following you with |mdlive-follow|.
 
 :MdLive toggle                                                *:MdLive-toggle*
-    Starts or stops the preview of the current buffer.
+    Starts or stops the preview of the current buffer. A preview whose tab
+    was closed is opened again instead of being stopped.
 
 :MdLive url                                                      *:MdLive-url*
     Shows the URL of the preview of the current buffer, or in a buffer
@@ -86,6 +89,9 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
     |:write|. With [!], an existing file is overwritten. The page is
     rendered by the browser, so a preview tab is opened first if none is
     connected. See |mdlive-export|.
+    As |:MdLive| can be followed by another command, a `"` starts a comment:
+    write `\"` for one in a file name. `:MdLive export "page.html"` exports
+    to the default file.
 
 ------------------------------------------------------------------------------
 MAPPINGS                                                     *mdlive-mappings*
@@ -141,11 +147,14 @@ Calling |mdlive.setup()| again also updates previews that are open.
 host                                                      *mdlive-config-host*
     Type: `string`, default: `"127.0.0.1"`
     Address the server binds to. Keep it on a loopback address: the preview
-    also serves the files next to your Markdown.
+    also serves the files next to your Markdown. It is an IPv4 or IPv6
+    address, not a name such as `localhost`, and not `0.0.0.0` or `::`: the
+    server only answers requests made to this address or to localhost, so
+    another machine reaches it through the address of one interface.
 
 port                                                      *mdlive-config-port*
     Type: `integer`, default: `0`
-    Port of the server. `0` picks a free port.
+    Port of the server, up to 65535. `0` picks a free port.
 
 file_root                                            *mdlive-config-file_root*
     Type: `string`, default: `nil`
@@ -181,7 +190,8 @@ browser_redirect                              *mdlive-config-browser_redirect*
 
 debounce_ms                                        *mdlive-config-debounce_ms*
     Type: `integer`, default: `150`
-    Milliseconds to wait after the last change before updating the preview.
+    Milliseconds to wait after the last change before updating the preview,
+    `0` or more.
 
 auto_open                                            *mdlive-config-auto_open*
     Type: `boolean`, default: `false`
@@ -435,7 +445,8 @@ Wiki links                                                  *mdlive-wikilinks*
     Neovim like a relative link. When the note is not next to the file, it
     is looked for by name, or by the end of its path (`[[sub/note]]`),
     under the directories the preview may read (see |mdlive-config-file_root|);
-    hidden directories and `node_modules` are skipped.
+    hidden directories and `node_modules` are skipped, and the search gives
+    up after 20000 files and directories.
 
 Export                                                         *mdlive-export*
     |:MdLive-export| saves the page as it looks in the preview, theme colors

@@ -39,6 +39,7 @@ M.request_timeout = 10000
 ---@field heartbeat? uv.uv_timer_t
 ---@field handlers? mdlive.ServerOpts
 ---@field clients table<integer, table<uv.uv_tcp_t, true>>
+---@field seen table<integer, true>
 
 ---@type mdlive.ServerState
 local state = {
@@ -51,6 +52,7 @@ local state = {
   heartbeat = nil,
   handlers = nil,
   clients = {}, -- [bufnr] = { [socket] = true }
+  seen = {}, -- [bufnr] = true once a tab connected to its preview
 }
 
 local mime = {
@@ -288,6 +290,7 @@ local function subscribe(sock, bufnr)
   }, "\r\n"))
   state.clients[bufnr] = state.clients[bufnr] or {}
   state.clients[bufnr][sock] = true
+  state.seen[bufnr] = true
   assert(state.handlers).on_subscribe(bufnr)
 end
 
@@ -521,10 +524,12 @@ function M.start(opts)
     return state.port
   end
   local server = assert(uv.new_tcp())
-  local ok, err = server:bind(opts.host, opts.port)
-  if not ok then
+  -- bind() returns an error for a port that is taken, but throws for a `host`
+  -- that is not an address.
+  local bound, ok, err = pcall(server.bind, server, opts.host, opts.port)
+  if not bound or not ok then
     close(server)
-    return nil, err
+    return nil, tostring(bound and err or ok)
   end
   state.server, state.host, state.handlers = server, opts.host, opts
   state.token = assert(uv.random(16)):gsub(".", function(c)
@@ -559,7 +564,7 @@ function M.stop()
       close(sock)
     end
   end
-  state.clients = {}
+  state.clients, state.seen = {}, {}
   close(state.heartbeat)
   close(state.server)
   state.server, state.port, state.token, state.heartbeat, state.handlers = nil, nil, nil, nil, nil
@@ -574,6 +579,20 @@ end
 ---@return integer|nil
 function M.port()
   return state.port
+end
+
+--- Whether the buffer's preview had tabs connected and has none left: its
+--- tab was closed.
+---@param bufnr integer
+---@return boolean
+function M.tabs_closed(bufnr)
+  return state.seen[bufnr] == true and M.client_count(bufnr) == 0
+end
+
+--- Forgets the tabs the buffer's preview had: a new one is being opened.
+---@param bufnr integer
+function M.await_tab(bufnr)
+  state.seen[bufnr] = nil
 end
 
 --- Number of browser tabs connected to a buffer's preview.
@@ -624,7 +643,7 @@ function M.disconnect(bufnr, event, data)
       close(sock)
     end
   end
-  state.clients[bufnr] = nil
+  state.clients[bufnr], state.seen[bufnr] = nil, nil
 end
 
 --- Path of a buffer's preview page, token included.
@@ -639,9 +658,7 @@ end
 ---@return string
 function M.url(bufnr)
   local host = assert(state.host, "the server is not running")
-  if host == "0.0.0.0" or host == "::" then
-    host = "127.0.0.1"
-  elseif host:find(":", 1, true) then
+  if host:find(":", 1, true) then
     host = "[" .. host .. "]"
   end
   return ("http://%s:%d%s"):format(host, state.port, M.preview_path(bufnr))

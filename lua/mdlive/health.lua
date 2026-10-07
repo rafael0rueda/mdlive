@@ -70,8 +70,11 @@ local function check_server()
     health.ok(("Running on %s:%d"):format(opts.host, server.port()))
   else
     local tcp = assert(vim.uv.new_tcp())
-    local ok, err = tcp:bind(opts.host, opts.port)
-    if ok then
+    -- bind() throws for a `host` that is not an address.
+    local bound, ok, err = pcall(tcp.bind, tcp, opts.host, opts.port)
+    if not bound then
+      ok, err = nil, ok
+    elseif ok then
       ok, err = tcp:listen(1, function() end)
     end
     tcp:close()
@@ -84,9 +87,9 @@ local function check_server()
     end
   end
 
-  if not vim.tbl_contains({ "127.0.0.1", "localhost", "::1" }, opts.host) then
+  if not (opts.host:match("^127%.") or opts.host == "::1") then
     health.warn(("`host` is %s, not a loopback address"):format(opts.host), {
-      "The preview and the files next to your markdown are reachable from the network",
+      "The preview and the files next to your markdown are reachable from the network, over plain HTTP",
     })
   end
 end

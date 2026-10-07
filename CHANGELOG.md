@@ -7,6 +7,24 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Changed
+
+- `:MdLive` says which file it previews instead of showing the URL, which
+  gives access to the preview: the URL is shown when it has to be opened by
+  hand, with `browser = false` or when the browser could not be started,
+  and by `:MdLive url`
+- `:MdLive toggle` opens the preview again when its tab was closed, instead
+  of stopping a preview that shows nowhere
+- `:MdLive stop` and `:MdLive toggle` say that the preview stopped, or that
+  there was none
+- `setup()` refuses a `host` that is a name (`localhost`) or every address
+  (`0.0.0.0`, `::`), which never worked, a `port` or `debounce_ms` that is
+  not a whole number in range, and `browser = true`: it warns and uses the
+  default
+- A wiki link to a note that is not next to the file is looked for in up
+  to 20000 files and directories, so that a click cannot make Neovim wait
+  on a very large directory
+
 ### Fixed
 
 - A heading named "Status" or "Outline", or HTML with one of those ids, is
@@ -28,6 +46,10 @@ can change or remove features.
 - Following to another buffer no longer scrolls its window by a few lines
 - A link to a heading of the file itself (`[x](this.md#heading)`) no longer
   makes the tab stop following
+- A `host` that is not an address is reported by `:MdLive` and
+  `:checkhealth mdlive`, instead of raising an error
+- When the port is taken, the message names the address and says that
+  `port = 0` picks a free one
 - `:MdLive stop | MdLive` opens a tab again, instead of counting the one
   that was just told to close
 
