@@ -1100,6 +1100,15 @@
       // A wiki link names a note: Neovim may look for it by name.
       const wiki = link.classList.contains("wikilink") ? "&wiki=1" : "";
       const data = await post(`/open/${bufnr}?path=${encodeURIComponent(openPath)}${wiki}`);
+      if (data.url === location.pathname) {
+        // A link to this file: the page stays, and goes on following Neovim.
+        navigating = false;
+        if (openHash.length > 1) {
+          history.pushState(null, "", openHash);
+          anchorTarget(safeDecode(openHash.slice(1)))?.scrollIntoView();
+        }
+        return;
+      }
       location.href = data.url + openHash;
     } catch (err) {
       navigating = false;
@@ -1226,6 +1235,12 @@
       pendingScroll = false;
       pendingAnchor = null;
       ignoreCursor = false;
+      // Not a scroll made by hand: it must neither scroll the Neovim window of
+      // the new buffer, nor hold back the cursor events that place the page.
+      clearTimeout(editorScrollTimer);
+      editorScrollTimer = undefined;
+      scrolledByHandAt = -Infinity;
+      syncedY = 0;
       window.scrollTo(0, 0);
       connect();
     });

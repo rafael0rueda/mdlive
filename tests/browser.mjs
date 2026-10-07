@@ -648,6 +648,55 @@ try {
   await waitFor(() => page.eval(`!document.querySelector("#content h2#status")`));
   await page.eval(`history.replaceState(null, "", location.pathname)`);
 
+  // Follow mode --------------------------------------------------------------
+
+  // Entering a buffer moves the tab to it, at the place its window shows: the
+  // page going back to the top for the new document is not a scroll made by
+  // hand, which would scroll that window.
+  const longFile = join(dir, "long.md");
+  writeFileSync(longFile, Array.from({ length: 200 }, (_, i) => `# Heading ${i + 1}\n`).join("\n"));
+  const shows = (text) => waitFor(() => page.eval(`document.querySelector("#content h1, #content h2")?.textContent === ${JSON.stringify(text)}`));
+  await nvim.lua(`vim.cmd.edit(${JSON.stringify(longFile)}) vim.cmd("normal! 301Gzb")`);
+  await shows("Heading 1");
+  const longBuf = await nvim.lua("return vim.api.nvim_get_current_buf()");
+  await nvim.lua(`vim.cmd.buffer(${demoBuf}) vim.cmd("normal! G")`);
+  await shows("mdlive demo");
+  await waitFor(() => page.eval("scrollY > 0"));
+  await sleep(1000);
+  // The cursor at the bottom of the window: its line is below what fits on the page.
+  const longTop = await nvim.lua(`vim.cmd.buffer(${longBuf}) vim.cmd("normal! zb") return vim.fn.line("w0")`);
+  await shows("Heading 1");
+  const followedTo = await waitFor(() => page.eval("scrollY > 0"));
+  await sleep(1500);
+  const longTopNow = await nvim.lua(`return vim.fn.line("w0")`);
+  check(
+    "following to a buffer shows its place and leaves its window where it was",
+    followedTo && longTop > 1 && longTopNow === longTop,
+    { longTop, longTopNow, scrollY: await page.eval("scrollY") },
+  );
+
+  // A link to the file itself stays on the page, which goes on following.
+  await nvim.lua(`vim.cmd.buffer(${demoBuf}) vim.cmd("normal! gg")`);
+  await shows("mdlive demo");
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, { "", "[self probe](demo.md#table)" })`);
+  const selfLink = `Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "self probe")`;
+  await waitFor(() => page.eval(`Boolean(${selfLink})`));
+  await page.eval(`${selfLink}.click()`);
+  const atTable = await waitFor(() =>
+    page.eval(`(() => {
+      const { top } = document.querySelector("#content h2#table").getBoundingClientRect();
+      return location.hash === "#table" && top >= 0 && top < innerHeight;
+    })()`),
+  );
+  check("a link to a heading of the same file scrolls to it", atTable, await page.eval(`[location.hash, scrollY]`));
+  await sleep(1000);
+  await nvim.lua(`vim.cmd.buffer(${longBuf})`);
+  check("the tab still follows Neovim after such a link", await shows("Heading 1"), await page.eval("document.title"));
+  await nvim.lua(`vim.cmd.buffer(${demoBuf}) vim.cmd("normal! gg")`);
+  await shows("mdlive demo");
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -2, -1, false, {})`);
+  await waitFor(() => page.eval(`!${selfLink}`));
+
   // Status messages ----------------------------------------------------------
 
   await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, { "", "[missing probe](missing.md)" })`);

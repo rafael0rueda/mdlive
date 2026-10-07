@@ -18,6 +18,18 @@ can change or remove features.
   buffer again when the item changes in Neovim
 - `.mp3`, `.ogg`, `.wav`, `.m4a`, `.flac` and `.mov` files are served with
   their type, so `<audio>` and `<video>` can play them
+- The preview shows changes made to the buffer while you are in another
+  one, such as those of a formatter, an LSP rename or a file reloaded from
+  disk; they only arrived once you were back in the buffer
+- `:edit!` on a previewed buffer no longer stops its preview
+- Follow mode keeps the tab when buffers are entered one right after the
+  other, as `:bufdo` or loading a session does: the tab stayed on a buffer
+  in between, and the one you ended up in had no preview
+- Following to another buffer no longer scrolls its window by a few lines
+- A link to a heading of the file itself (`[x](this.md#heading)`) no longer
+  makes the tab stop following
+- `:MdLive stop | MdLive` opens a tab again, instead of counting the one
+  that was just told to close
 
 ## [0.4.1] - 2026-10-06
 

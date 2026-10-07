@@ -22,6 +22,15 @@ local M = {}
 local previews = {}
 ---@type integer|nil
 local active = nil -- follow mode: the buffer the preview tabs are showing
+-- Follow mode: the buffers the tabs were told to leave, kept until the tabs
+-- had the time to; one that still connects to them is sent on to `active`.
+---@type table<integer, true>
+local leaving = {}
+-- Follow mode: until when (vim.uv.now()) the tabs count as connected to
+-- `active`, although they are still on their way there.
+---@type integer|nil
+local arriving = nil
+local arrival_ms = 2000
 local api = vim.api
 
 local function notify(msg, level)
@@ -157,23 +166,26 @@ end
 local function attach(bufnr)
   local group = api.nvim_create_augroup("mdlive.buf." .. bufnr, { clear = true })
   local timer = assert(vim.uv.new_timer())
-  previews[bufnr] = { group = group, timer = timer }
+  local preview = { group = group, timer = timer }
+  previews[bufnr] = preview
 
-  api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
-    group = group,
-    buffer = bufnr,
-    callback = function()
-      timer:stop()
-      timer:start(
-        config.options.debounce_ms,
-        0,
-        vim.schedule_wrap(function()
-          send_content(bufnr)
-          send_view(bufnr)
-        end)
-      )
-    end,
-  })
+  -- Every change counts, not only what is typed in the buffer while it is the
+  -- current one: a formatter, an LSP rename or a file reloaded from disk too.
+  local function changed()
+    if previews[bufnr] ~= preview then
+      return true -- the preview stopped: detach from the buffer
+    end
+    timer:stop()
+    timer:start(
+      config.options.debounce_ms,
+      0,
+      vim.schedule_wrap(function()
+        send_content(bufnr)
+        send_view(bufnr)
+      end)
+    )
+  end
+  api.nvim_buf_attach(bufnr, false, { on_lines = changed, on_reload = changed })
   api.nvim_create_autocmd("BufFilePost", {
     group = group,
     buffer = bufnr,
@@ -193,6 +205,11 @@ local function attach(bufnr)
     buffer = bufnr,
     callback = function()
       vim.schedule(function()
+        -- :edit! unloads the buffer to load it again: the preview goes on.
+        if previews[bufnr] == preview and api.nvim_buf_is_loaded(bufnr) then
+          api.nvim_buf_attach(bufnr, false, { on_lines = changed, on_reload = changed })
+          return send_content(bufnr, true)
+        end
         M.enable(false, { buf = bufnr })
       end)
     end,
@@ -371,6 +388,12 @@ local function start_server()
     on_scroll = scroll_to,
     on_export = export.receive,
     on_subscribe = function(bufnr)
+      if bufnr == active then
+        arriving = nil
+      elseif leaving[bufnr] and active then
+        -- Follow mode moved on while this tab was on its way here.
+        return server.broadcast(bufnr, "switch", { bufnr = active })
+      end
       send_theme(bufnr)
       send_style(bufnr)
       send_settings(bufnr)
@@ -415,13 +438,18 @@ local function detach(bufnr)
   pcall(api.nvim_del_augroup_by_id, preview.group)
   preview.timer:stop()
   preview.timer:close()
+  leaving[bufnr] = nil
   if active == bufnr then
     active = nil
   end
 end
 
+-- Whether a tab shows the active buffer, or is on its way to it.
 local function is_following()
-  return config.options.follow and active ~= nil and previews[active] ~= nil and server.client_count(active) > 0
+  if not (config.options.follow and active and previews[active]) then
+    return false
+  end
+  return server.client_count(active) > 0 or (arriving ~= nil and vim.uv.now() < arriving)
 end
 
 -- Follow mode: point the tabs showing the active buffer at `bufnr` instead.
@@ -431,14 +459,22 @@ local function follow(bufnr)
     attach(bufnr)
   end
   active = bufnr
+  leaving[bufnr] = nil
+  arriving = vim.uv.now() + arrival_ms
   server.broadcast(from, "switch", { bufnr = bufnr })
-  -- The tabs reconnect to the new buffer; drop the old preview once the event is out.
+  if not from then
+    return
+  end
+  -- The tabs reconnect to the new buffer. The old preview stays for a moment:
+  -- when buffers are entered one right after the other, a tab can still be
+  -- connecting to it, and is sent on from there (see `on_subscribe`).
+  leaving[from] = true
   vim.defer_fn(function()
-    if from and active ~= from and previews[from] then
+    if leaving[from] and active ~= from then
       server.disconnect(from)
       detach(from)
     end
-  end, 100)
+  end, arrival_ms)
 end
 
 -- Starts the preview of a buffer: opens a browser tab, or switches the followed tab to it.
@@ -463,6 +499,7 @@ local function start_preview(bufnr)
     attach(bufnr)
   end
   active = bufnr
+  leaving[bufnr] = nil
   local url = server.url(bufnr)
   if server.client_count(bufnr) > 0 then
     notify("preview already open at " .. url)
@@ -480,12 +517,11 @@ local function stop_preview(bufnr)
   end
   detach(bufnr)
 
-  server.broadcast(bufnr, "close", vim.empty_dict())
-  -- Give the "close" event a moment to reach the browser before hanging up.
+  -- Its tabs are gone from here on: a preview of the buffer started right
+  -- away opens a new one.
+  server.disconnect(bufnr, "close", vim.empty_dict())
+  -- Give the "close" event a moment to reach the browser before the server stops.
   vim.defer_fn(function()
-    if not previews[bufnr] then
-      server.disconnect(bufnr)
-    end
     if next(previews) == nil then
       server.stop()
     end
@@ -533,7 +569,9 @@ function M.is_enabled(filter)
   if buf == nil then
     return next(previews) ~= nil
   end
-  return previews[resolve_buf(buf)] ~= nil
+  buf = resolve_buf(buf)
+  -- Not one that follow mode left, and only keeps for the tabs still on their way.
+  return previews[buf] ~= nil and not leaving[buf]
 end
 
 --- Returns the URL of the preview of the buffer `filter.buf` (0 for the current

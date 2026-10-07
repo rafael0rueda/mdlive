@@ -138,7 +138,7 @@ clipboard in terminals that support OSC 52. See `:help mdlive-remote`.
 ## How it works
 
 ```
-Neovim buffer --TextChanged/CursorMoved--> Lua HTTP server --SSE--> browser
+Neovim buffer --changes/CursorMoved--> Lua HTTP server --SSE--> browser
 ```
 
 The browser page (`app/`) renders the Markdown with markdown-it and patches the
