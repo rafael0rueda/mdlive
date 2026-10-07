@@ -40,10 +40,15 @@ With lazy.nvim: >lua
     {
       "rafael0rueda/mdlive",
       version = "*", -- the latest release; remove it to follow main
-      ft = "markdown",
-      cmd = "MdLive",
-      opts = {},
     }
+<
+The plugin loads its code when you first use it, so it needs no `ft`, `cmd`
+or `keys` to be lazy: with them, the mappings (|mdlive-mappings|) and
+`auto_open` would not be there until it loads. Add `opts = { ... }` to change
+options.
+
+With |vim.pack| (Neovim 0.12): >lua
+    vim.pack.add({ "https://github.com/rafael0rueda/mdlive" })
 <
 Calling |mdlive.setup()| is optional: the commands work with the defaults.
 
@@ -248,7 +253,9 @@ css                                                        *mdlive-config-css*
 6. LUA API                                                        *mdlive-api*
 
 The functions are in the `mdlive` module. Where they take a buffer, `0` means
-the current buffer. Errors are returned and also shown with |vim.notify()|.
+the current buffer. Errors are returned, as a second value after `nil`, and
+not shown: the functions say nothing, and the commands report what they did
+with |vim.notify()|. |mdlive.setup()| does warn about options it refuses.
 
 mdlive.setup({opts}?)                                         *mdlive.setup()*
     Sets the options, see |mdlive-configuration|. Only needed to change them.
@@ -330,6 +337,7 @@ mdlive.export({bufnr}?, {opts}?, {callback}?)                *mdlive.export()*
         (`true?`) `true` when the export started.
         (`string?`) Error message when it could not start, for example
         when the file exists and {force} is not set. {callback} gets it too.
+        Nothing is shown: report the result from {callback}.
 
 ------------------------------------------------------------------------------
 DEPRECATED                                                 *mdlive-deprecated*
@@ -444,7 +452,8 @@ Wiki links                                                  *mdlive-wikilinks*
     becomes the anchor the preview gives it. Clicking one opens the note in
     Neovim like a relative link. When the note is not next to the file, it
     is looked for by name, or by the end of its path (`[[sub/note]]`),
-    under the directories the preview may read (see |mdlive-config-file_root|);
+    under the directories the preview may read (see
+    |mdlive-config-file_root|);
     hidden directories and `node_modules` are skipped, and the search gives
     up after 20000 files and directories.
 
@@ -489,10 +498,10 @@ just cloned, so the preview treats it as untrusted:
   attributes are kept. A Mermaid diagram cannot set its own CSS or fonts.
 - Files are served only from the directory of the Markdown file and the
   project it is in, in a sandbox that blocks scripts, and a `.js` file is
-  served as text. A wiki link to a note
-  that is not next to the file is looked for only there too. Symlinks are resolved
-  first, so neither a file the page fetches nor a link that opens a file in
-  Neovim can point outside those directories. The working directory counts as
+  served as text. A wiki link to a note that is not next to the file is
+  looked for only there too. Symlinks are resolved first, so neither a file
+  the page fetches nor a link that opens a file in Neovim can point outside
+  those directories. The working directory counts as
   the project only when the Markdown file is inside it, so previewing
   /tmp/notes.md from a Neovim started in your home directory does not put it
   within reach. See |mdlive-config-file_root|.
@@ -511,8 +520,8 @@ just cloned, so the preview treats it as untrusted:
 - The server rejects requests with a non-local Host header. Requests that act
   in Neovim (opening a linked file, moving the cursor, scrolling the window,
   ticking a task, saving an export) must come from the preview page itself,
-  so other websites cannot send them. Ticking a task changes only the `[ ]` or `[x]` of a line that is
-  a task item in the buffer.
+  so other websites cannot send them. Ticking a task changes only the `[ ]`
+  or `[x]` of a line that is a task item in the buffer.
 - Exported HTML files include a Content-Security-Policy that blocks scripts
   wherever they are opened.
 

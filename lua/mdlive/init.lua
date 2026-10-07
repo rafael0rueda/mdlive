@@ -7,7 +7,7 @@ local theme = require("mdlive.theme")
 local M = {}
 
 ---@class mdlive.Filter
----@field buf? integer Buffer to act on, 0 for the current one. Without it, every preview.
+---@field buf? integer Buffer to act on, 0 for the current one. Without it, see each function.
 
 ---@class mdlive.ExportOpts
 ---@field path? string File to write, by default the buffer's file with an .html extension.
@@ -490,20 +490,25 @@ local function follow(bufnr)
   end, arrival_ms)
 end
 
--- Starts the preview of a buffer: opens a browser tab, or switches the followed tab to it.
+-- Starts the preview of a buffer: opens a browser tab, or switches the followed
+-- tab to it. Returns true and what happened, for the commands to show (a
+-- warning when `warn` is set), or nil and why not.
+---@param bufnr integer
+---@return true|nil ok
+---@return string message
+---@return boolean|nil warn
 local function start_preview(bufnr)
   if not api.nvim_buf_is_valid(bufnr) then
     return nil, "invalid buffer " .. bufnr
   end
   local ok, err = start_server()
   if not ok then
-    return nil, err
+    return nil, err --[[@as string]]
   end
   if config.options.follow and active and active ~= bufnr then
     if is_following() then
       follow(bufnr)
-      notify("preview switched to " .. buf_label(bufnr))
-      return true
+      return true, "preview switched to " .. buf_label(bufnr)
     end
     -- The followed buffer's tab was closed; a new tab takes over.
     detach(active)
@@ -514,18 +519,20 @@ local function start_preview(bufnr)
   active = bufnr
   leaving[bufnr] = nil
   if server.client_count(bufnr) > 0 then
-    notify(("preview of %s is already open"):format(buf_label(bufnr)))
-    return true
+    return true, ("preview of %s is already open"):format(buf_label(bufnr))
   end
   local url = server.url(bufnr)
   server.await_tab(bufnr)
-  -- The URL holds the token: it is only shown when it has to be opened by hand.
-  if browser.open(url) then
-    notify("previewing " .. buf_label(bufnr))
-  else
-    notify(("previewing %s at %s"):format(buf_label(bufnr), url))
+  local opened, open_err = browser.open(url)
+  if opened then
+    return true, "previewing " .. buf_label(bufnr)
   end
-  return true
+  -- The URL holds the token: it is only shown when it has to be opened by hand.
+  local message = ("previewing %s at %s"):format(buf_label(bufnr), url)
+  if open_err then
+    return true, ("%s (%s)"):format(message, open_err), true
+  end
+  return true, message
 end
 
 -- Stops the preview of a buffer and tells its tabs.
@@ -546,18 +553,17 @@ local function stop_preview(bufnr)
   end, 100)
 end
 
---- Starts or stops previews. `filter.buf` selects a buffer, 0 for the current
---- one. Without it, `enable(false)` stops every preview and `enable(true)`
---- previews the current buffer. `enable` defaults to true. Returns true, or nil
---- and a message on failure (the message is also shown).
+-- enable(), which also returns what happened when a preview started, and
+-- whether that is a warning: the commands and `auto_open` show it.
 ---@param enable? boolean
 ---@param filter? mdlive.Filter
 ---@return true|nil ok
 ---@return string|nil err
-function M.enable(enable, filter)
+---@return string|nil message
+---@return boolean|nil warn
+local function enable_preview(enable, filter)
   local ok, err = supported()
   if not ok then
-    notify(err, vim.log.levels.ERROR)
     return nil, err
   end
   vim.validate("enable", enable, "boolean", true)
@@ -571,9 +577,40 @@ function M.enable(enable, filter)
     end
     return true
   end
-  ok, err = start_preview(resolve_buf(buf))
+  local message, warn
+  ok, message, warn = start_preview(resolve_buf(buf))
   if not ok then
-    notify(err, vim.log.levels.ERROR)
+    return nil, message
+  end
+  return true, nil, message, warn
+end
+
+--- Starts or stops previews. `filter.buf` selects a buffer, 0 for the current
+--- one. Without it, `enable(false)` stops every preview and `enable(true)`
+--- previews the current buffer. `enable` defaults to true. Returns true, or nil
+--- and a message on failure; nothing is shown.
+---@param enable? boolean
+---@param filter? mdlive.Filter
+---@return true|nil ok
+---@return string|nil err
+function M.enable(enable, filter)
+  local ok, err = enable_preview(enable, filter)
+  return ok, err
+end
+
+--- What |:MdLive| runs: enable(), then what it has to say, shown with
+--- vim.notify(). Returns the same as enable().
+---@package
+---@param enable? boolean
+---@param filter? mdlive.Filter
+---@return true|nil ok
+---@return string|nil err
+function M._enable_and_report(enable, filter)
+  local ok, err, message, warn = enable_preview(enable, filter)
+  if not ok then
+    notify(err --[[@as string]], vim.log.levels.ERROR)
+  elseif message then
+    notify(message, warn and vim.log.levels.WARN or vim.log.levels.INFO)
   end
   return ok, err
 end
@@ -617,8 +654,8 @@ end
 --- is rendered by the browser, so the preview is opened first if needed.
 --- `opts.path` defaults to the buffer's file with an .html extension, and
 --- `opts.force` overwrites an existing file. Returns true once the export is
---- queued, or nil and a message (also shown). `callback(err, path)` is called
---- once, when the file is written or the export fails.
+--- queued, or nil and a message. `callback(err, path)` is called once, when the
+--- file is written or the export fails; nothing is shown.
 ---@param bufnr? integer Buffer to export, 0 or nil for the current one.
 ---@param opts? mdlive.ExportOpts
 ---@param callback? fun(err: string|nil, path: string|nil)
@@ -626,9 +663,8 @@ end
 ---@return string|nil err
 function M.export(bufnr, opts, callback)
   local path
-  -- Every failure is shown and handed to the callback.
+  -- Every failure is returned and handed to the callback.
   local function fail(err)
-    notify(err, vim.log.levels.ERROR)
     if callback then
       vim.schedule(function()
         callback(err, path)
@@ -681,7 +717,7 @@ function M.setup(opts)
       pattern = config.options.filetypes,
       callback = function(ev)
         if not previews[ev.buf] and wants_preview(ev.buf) then
-          M.enable(true, { buf = ev.buf })
+          M._enable_and_report(true, { buf = ev.buf })
         end
       end,
     })
@@ -737,11 +773,11 @@ function M.close(bufnr)
   M.enable(false, { buf = bufnr or 0 })
 end
 
---- Deprecated: use mdlive.enable(not mdlive.is_enabled()).
+--- Deprecated: use mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 }).
 ---@deprecated
 ---@param bufnr? integer
 function M.toggle(bufnr)
-  deprecate("mdlive.toggle()", "mdlive.enable(not mdlive.is_enabled())")
+  deprecate("mdlive.toggle()", "mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 })")
   local filter = { buf = resolve_buf(bufnr) }
   M.enable(not M.is_enabled(filter), filter)
 end

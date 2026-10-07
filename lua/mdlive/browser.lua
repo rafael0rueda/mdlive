@@ -3,10 +3,6 @@ local config = require("mdlive.config")
 
 local M = {}
 
-local function notify(msg, level)
-  vim.notify("[mdlive] " .. msg, level or vim.log.levels.INFO)
-end
-
 -- The preview URL carries the token, and the arguments a program is started
 -- with are readable by every user on the machine (/proc/<pid>/cmdline). The
 -- browser is pointed at a file only you can read, which redirects to the
@@ -99,9 +95,11 @@ end
 
 --- Opens `url` with the `browser` option: a function gets the URL itself, and a
 --- program is started on the redirect file, or on the URL if that fails.
---- `false` opens nothing. Returns whether something was started to open it.
+--- `false` opens nothing. Returns whether something was started to open it,
+--- and a message when starting it failed.
 ---@param url string
 ---@return boolean opened
+---@return string|nil err
 function M.open(url)
   local browser = config.options.browser
   if browser == false then
@@ -126,15 +124,12 @@ function M.open(url)
   if type(browser) == "table" then
     local ok, err = pcall(vim.system, vim.list_extend(vim.deepcopy(browser), { target }), { detach = true })
     if not ok then
-      notify("could not start browser: " .. tostring(err), vim.log.levels.ERROR)
+      return false, "could not start the browser: " .. tostring(err)
     end
-    return ok
+    return true
   end
   local _, err = vim.ui.open(target)
-  if err then
-    notify(err, vim.log.levels.WARN)
-  end
-  return err == nil
+  return err == nil, err
 end
 
 --- Removes the redirect files that are still there, when Neovim quits before
