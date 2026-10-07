@@ -60,7 +60,7 @@ body:
   - type: input
     attributes:
       label: mdlive version
-      description: A release such as `v0.3.0`, or the commit (`git rev-parse --short HEAD` in the plugin's directory).
+      description: A release such as `v0.4.1`, or the commit (`git rev-parse --short HEAD` in the plugin's directory).
     validations:
       required: true
 

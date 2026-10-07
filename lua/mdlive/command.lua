@@ -13,7 +13,7 @@ end
 local subcommands = {
   start = {
     run = function()
-      require("mdlive").enable(true, { buf = 0 })
+      require("mdlive")._enable_and_report(true, { buf = 0 })
     end,
   },
   stop = {
@@ -34,9 +34,9 @@ local subcommands = {
       -- A preview whose tab was closed shows nowhere: open it again instead of
       -- stopping what looks stopped already.
       if on and require("mdlive.server").tabs_closed(vim.api.nvim_get_current_buf()) then
-        return mdlive.enable(true, { buf = 0 })
+        return mdlive._enable_and_report(true, { buf = 0 })
       end
-      mdlive.enable(not on, { buf = 0 })
+      mdlive._enable_and_report(not on, { buf = 0 })
       if on then
         notify("preview stopped")
       end
@@ -66,7 +66,19 @@ local subcommands = {
         end
         path = expanded
       end
-      require("mdlive").export(0, { path = path, force = bang })
+      -- What export() refuses is said at once; its callback gets that too, later.
+      local refused = false
+      local ok, err = require("mdlive").export(0, { path = path, force = bang }, function(export_err, written)
+        if not export_err then
+          notify("exported to " .. vim.fn.fnamemodify(written --[[@as string]], ":~:."))
+        elseif not refused then
+          notify(export_err, vim.log.levels.ERROR)
+        end
+      end)
+      if not ok then
+        refused = true
+        notify(err --[[@as string]], vim.log.levels.ERROR)
+      end
     end,
   },
 }

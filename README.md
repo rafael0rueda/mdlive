@@ -42,28 +42,33 @@ Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
 {
   "rafael0rueda/mdlive",
   version = "*", -- the latest release; remove it to follow main
-  ft = "markdown",
-  cmd = "MdLive",
-  opts = {},
 }
 ```
 
-Without a plugin manager, clone the latest release and add it to `runtimepath`:
+The plugin loads its code when you first use it, so it needs no `ft`, `cmd`
+or `keys` to be lazy: with them, the `<Plug>` mappings and `auto_open` would
+not be there until it loads. Add `opts = { ... }` to change options.
+
+With Neovim 0.12's built-in plugin manager:
+
+```lua
+vim.pack.add({ "https://github.com/rafael0rueda/mdlive" })
+```
+
+Without a plugin manager, clone the latest release into a package directory,
+which Neovim loads at startup:
 
 ```sh
 git clone --branch v0.4.1 https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
 ```
 
-```lua
-require("mdlive").setup()
-```
-
-Or from any directory:
+Or from any other directory:
 
 ```lua
 vim.opt.rtp:prepend("/path/to/mdlive")
-require("mdlive").setup()
 ```
+
+`require("mdlive").setup()` is only needed to change options.
 
 ## Usage
 
@@ -86,11 +91,12 @@ own keys: `<Plug>(MdLive)`, `<Plug>(MdLiveStop)`, `<Plug>(MdLiveToggle)`,
 `<Plug>(MdLiveUrl)` and `<Plug>(MdLiveExport)`.
 
 ```lua
-vim.keymap.set("n", "<leader>mp", "<Plug>(MdLiveToggle)", { desc = "Markdown preview" })
+vim.keymap.set("n", "<leader>mv", "<Plug>(MdLiveToggle)", { desc = "Markdown live preview" })
 ```
 
 The same actions are available from Lua with `enable()`, `is_enabled()`,
-`url()` and `export()`, see `:help mdlive-api`.
+`url()` and `export()`, see `:help mdlive-api`. The functions return what
+happened and show nothing; the commands are what report it.
 
 Try it with `examples/demo.md`.
 
@@ -204,9 +210,10 @@ and Chrome or Chromium (set `CHROME=/path/to/chrome` if it is not on `PATH`),
 and no packages.
 
 CI runs the same targets: the smoke test on Neovim 0.11, stable and nightly,
-and on macOS and Windows; the browser tests on Linux and macOS; checks that the
-help tags in `doc/` build without errors and type checks the Lua code with
-lua-language-server, using the types in `$VIMRUNTIME`.
+and on macOS and Windows; the browser tests on Linux and macOS; stylua; the
+type checks of the Lua code (lua-language-server, with the types in
+`$VIMRUNTIME`) and of `app/preview.js` (TypeScript); the help tags of `doc/`;
+and that `app/vendor` is what its npm packages contain.
 
 ## License
 

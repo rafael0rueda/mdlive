@@ -9,6 +9,11 @@ can change or remove features.
 
 ### Changed
 
+- `enable()` and `export()` show nothing: they return `nil` and a message on
+  failure, as documented, and `export()` hands the result to its callback.
+  The commands and `auto_open` report as before. A mapping that calls them
+  directly and should report can use `<Plug>(MdLive)` and the other
+  mappings, or show what they return
 - `:MdLive` says which file it previews instead of showing the URL, which
   gives access to the preview: the URL is shown when it has to be opened by
   hand, with `browser = false` or when the browser could not be started,
@@ -46,6 +51,8 @@ can change or remove features.
 - Following to another buffer no longer scrolls its window by a few lines
 - A link to a heading of the file itself (`[x](this.md#heading)`) no longer
   makes the tab stop following
+- The hint of the deprecated `mdlive.toggle()` names a replacement that
+  acts on the current buffer; the one it printed stopped every preview
 - A `host` that is not an address is reported by `:MdLive` and
   `:checkhealth mdlive`, instead of raising an error
 - When the port is taken, the message names the address and says that

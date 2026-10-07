@@ -13,8 +13,9 @@ libraries are bundled in `app/vendor`.
 - `lua/mdlive/command.lua`: the subcommands of `:MdLive`, their completion,
   and the deprecated commands that run them.
 - `lua/mdlive/init.lua`: the public Lua API (`setup`, `enable`,
-  `is_enabled`, `export`), the previews and their buffer autocmds, and follow
-  mode. Deprecated names (`open()`, `:MdLiveStop`, ...) go through
+  `is_enabled`, `url`, `export`), the previews and what keeps them in step
+  with their buffers, follow mode, and what the page asks Neovim to do
+  (opening a link, jumping, scrolling, ticking a task). Deprecated names (`open()`, `:MdLiveStop`, ...) go through
   `vim.deprecate()` and are listed under `:help mdlive-deprecated`.
 - `lua/mdlive/browser.lua`: opening the preview in a browser, through a
   redirect file that keeps the token out of the process list.
@@ -33,6 +34,9 @@ libraries are bundled in `app/vendor`.
 - `tests/smoke.lua`: the Neovim side (server, security checks, API, commands).
 - `tests/browser.mjs` and `tests/harness.mjs`: the page in headless Chrome
   against a real Neovim, with no npm packages.
+- `examples/`: the Markdown the tests, the screenshot and the README's
+  "try it" use.
+- `.luarc.json`: the settings of the Lua type check.
 - `tsconfig.json` and `types/vendor.d.ts`: the type check of
   `app/preview.js`, and the globals of the libraries it uses.
 - `scripts/screenshot.mjs`: regenerates `docs/screenshot.png`.
@@ -87,8 +91,9 @@ test, `windows` tells which platform it runs on.
   `.editorconfig`, which Neovim applies by itself, sets the indentation and
   line endings of the other files.
 - Augroups and server handlers are named following Neovim's dev guide.
-- Errors go back to Lua callers as `nil, err`; the commands report them with
-  `vim.notify()`, prefixed with `[mdlive]`.
+- Errors go back to Lua callers as `nil, err`, and the public functions show
+  nothing. The commands and `auto_open` report, with `vim.notify()` and the
+  `[mdlive]` prefix: errors, and what a preview that started has to say.
 - `app/preview.js` is plain JavaScript in one IIFE with `"use strict"`: no
   build step, no modules, no npm. Its types come from JSDoc comments
   (`/** @type {...} */`), and the check includes `strictNullChecks`: a value

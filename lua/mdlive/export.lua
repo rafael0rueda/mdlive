@@ -16,10 +16,6 @@ local exports = {}
 local export_id = 0
 local export_timeout = 20000
 
-local function notify(msg, level)
-  vim.notify("[mdlive] " .. msg, level or vim.log.levels.INFO)
-end
-
 local function url_path(path)
   return (path:gsub("[^%w%-%._~/]", function(c)
     return ("%%%02X"):format(c:byte())
@@ -47,15 +43,10 @@ local function relative_url(from, to)
   return #parts > 0 and url_path(table.concat(parts, "/")) .. "/" or ""
 end
 
--- Ends a pending export: shows the outcome and hands it to the caller's callback.
+-- Ends a pending export: hands the outcome to the caller's callback.
 local function finish(id, err)
   local job = exports[id]
   exports[id] = nil
-  if err then
-    notify(err, vim.log.levels.ERROR)
-  else
-    notify("exported to " .. vim.fn.fnamemodify(job.path, ":~:."))
-  end
   if job.callback then
     vim.schedule(function()
       job.callback(err, job.path)

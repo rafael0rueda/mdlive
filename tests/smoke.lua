@@ -666,19 +666,33 @@ local ok, err = xpcall(function()
     local full_job = full_events:match("event: export\ndata: ([^\n]*)")
     full_job = full_job and vim.json.decode(full_job)
     code = get(session .. "/export/" .. (full_job and full_job.id or 0), send_page)
-    local reported = table.concat(messages, "\n")
-    check(
-      "export reports a failed write",
-      code == 404 and reported:find("could not write", 1, true) and not reported:find("exported to", 1, true),
-      reported
-    )
     vim.wait(500, function()
       return #exports_done > 0
     end, 10)
     check(
-      "export calls back with a failed write",
-      #exports_done == 1 and (exports_done[1].err or ""):find("could not write", 1, true),
-      vim.inspect(exports_done)
+      "export calls back with a failed write, and shows nothing itself",
+      code == 404
+        and #exports_done == 1
+        and (exports_done[1].err or ""):find("could not write", 1, true)
+        and #messages == 0,
+      vim.inspect({ exports_done, messages })
+    )
+
+    -- The command is what reports it, instead of announcing an exported file.
+    full_stream = connected(buf, 1)
+    vim.cmd("MdLive! export /dev/full")
+    _, full_events = full_stream()
+    full_job = full_events:match("event: export\ndata: ([^\n]*)")
+    full_job = full_job and vim.json.decode(full_job)
+    get(session .. "/export/" .. (full_job and full_job.id or 0), send_page)
+    vim.wait(500, function()
+      return #messages > 0
+    end, 10)
+    local reported = table.concat(messages, "\n")
+    check(
+      ":MdLive export reports a failed write",
+      #messages == 1 and reported:find("could not write", 1, true) and not reported:find("exported to", 1, true),
+      reported
     )
   end
   vim.notify = notify
@@ -825,6 +839,13 @@ local ok, err = xpcall(function()
     "is_enabled() with buffer 0, a buffer number and no filter",
     mdlive.is_enabled({ buf = 0 }) and mdlive.is_enabled({ buf = buf }) and mdlive.is_enabled()
   )
+  -- The functions return what happened and show nothing: the commands report.
+  local api_messages = {}
+  local real_api_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(api_messages, msg)
+  end
   local gone = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_delete(gone, { force = true })
   enabled, enable_err = mdlive.enable(true, { buf = gone })
@@ -833,6 +854,10 @@ local ok, err = xpcall(function()
     enabled == nil and (enable_err or ""):find("invalid buffer", 1, true),
     enable_err
   )
+  mdlive.enable(false, { buf = buf })
+  mdlive.enable(true, { buf = buf })
+  check("enable() shows nothing, on success or failure", #api_messages == 0, vim.inspect(api_messages))
+  vim.notify = real_api_notify
   check("enable() rejects arguments of the wrong type", not pcall(mdlive.enable, "yes"))
 
   -- Without follow mode every buffer keeps its own preview; enable(false) stops them all.
@@ -1142,7 +1167,9 @@ local ok, err = xpcall(function()
   check(
     "deprecated functions warn once each",
     select(2, deprecations:gsub("is deprecated", "")) == 4
-      and deprecations:find("mdlive.open() is deprecated, use mdlive.enable() instead", 1, true),
+      and deprecations:find("mdlive.open() is deprecated, use mdlive.enable() instead", 1, true)
+      -- The same buffer in both, or it would stop every preview.
+      and deprecations:find("use mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 }) instead", 1, true),
     deprecations
   )
 
@@ -1181,6 +1208,12 @@ local ok, err = xpcall(function()
   -- auto_open previews markdown files, but not LSP hover popups (markdown in a scratch buffer).
   setup({ auto_open = true })
   opened = nil
+  local auto_messages = {}
+  local real_auto_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(auto_messages, msg)
+  end
   local hover = vim.api.nvim_create_buf(false, true)
   local popup = { relative = "editor", row = 1, col = 1, width = 20, height = 3 }
   local hover_win = vim.api.nvim_open_win(hover, true, popup)
@@ -1189,10 +1222,13 @@ local ok, err = xpcall(function()
   check("auto_open skips LSP hover popups", opened == nil and not require("mdlive").is_enabled({ buf = hover }), opened)
   vim.cmd.edit(notes .. "/index.md")
   check(
-    "auto_open previews markdown files",
-    opened ~= nil and require("mdlive").is_enabled({ buf = notes_buf }),
-    opened
+    "auto_open previews markdown files, and says so",
+    opened ~= nil
+      and require("mdlive").is_enabled({ buf = notes_buf })
+      and auto_messages[#auto_messages] == "[mdlive] previewing index.md",
+    vim.inspect({ opened, auto_messages })
   )
+  vim.notify = real_auto_notify
   require("mdlive").enable(false, { buf = notes_buf })
   vim.wait(200)
   setup()
