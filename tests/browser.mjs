@@ -85,7 +85,8 @@ try {
   nvim = await startNeovim({ dir, file: "examples/demo.md" });
   await page.goto(nvim.url);
   const [, token, , bufnr] = new URL(nvim.url).pathname.split("/");
-  const files = `/${token}/files/${bufnr}/`;
+  // Relative to the page, so that no attribute of the document holds the token.
+  const files = `../files/${bufnr}/`;
 
   const heading = await waitFor(
     () => page.eval(`document.querySelector(".mermaid-block svg") && document.querySelector("h1")?.textContent`),
@@ -141,7 +142,7 @@ try {
   await nvim.lua(`vim.o.background = vim.o.background == "dark" and "light" or "dark"`);
   await waitFor(async () => (await diagramColors()).node === firstSurface);
   const imageLoaded = await waitFor(() => page.eval(`document.querySelector('img[alt="Local image"]')?.naturalWidth > 0`));
-  check("relative images load through the token URL", imageLoaded);
+  check("relative images load from the buffer's directory", imageLoaded);
 
   // Outline ------------------------------------------------------------------
 
@@ -400,6 +401,8 @@ try {
     "", '<picture><source srcset="assets/logo.svg 1x, https://example.com/big.png 2x"><img alt="picture probe" src="missing.png"></picture>',
     "", '<video poster="assets/logo.svg" src="clip.mp4"></video>',
     "", "[manual probe](assets/manual.pdf#page=3)",
+    "", '<style>#content { outline: 3px solid rgb(1, 2, 3) }</style>',
+    "", '<link rel="stylesheet" href="assets/probe.css"><p id="after-style">after the style</p>',
   })`);
   // The <img> itself points to a missing file: it only loads through the rewritten srcset.
   const media = await waitFor(() =>
@@ -415,13 +418,60 @@ try {
     })()`),
   );
   check(
-    "relative srcset, poster and media URLs load through the token URL",
+    "relative srcset, poster and media URLs load from the buffer's directory",
     media?.srcset === `${files}assets/logo.svg 1x, https://example.com/big.png 2x` &&
       media.poster === `${files}assets/logo.svg` &&
       media.src === `${files}clip.mp4`,
     media,
   );
   check("links to local files keep their fragment", media?.manual === `${files}assets/manual.pdf#page=3`, media);
+
+  // The document's HTML is untrusted: with a <style>, selectors on an attribute
+  // holding the token could send it to another server, piece by piece.
+  // A diagram's own configuration is untrusted too: these options would put
+  // the page's URL in the drawing, and rules of the document's in its <style>.
+  const diagramLines = [
+    "",
+    "```mermaid",
+    '%%{init: {"arrowMarkerAbsolute": true, "themeCSS": ".node rect { stroke-width: 7px }"}}%%',
+    "flowchart LR",
+    "  P --> Q",
+    "```",
+    "",
+    "```mermaid",
+    "---",
+    "config:",
+    "  arrowMarkerAbsolute: true",
+    '  themeCSS: ".node rect { stroke-width: 9px }"',
+    "  themeVariables:",
+    '    fontFamily: "probe-font"',
+    "---",
+    "flowchart LR",
+    "  R --> S",
+    "```",
+  ];
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, vim.json.decode(${JSON.stringify(JSON.stringify(diagramLines))}))`);
+  const diagrams = await waitFor(
+    () =>
+      page.eval(`(() => {
+        const drawn = Array.from(document.querySelectorAll(".mermaid-block svg"));
+        return drawn.length === 3 && drawn.slice(1).map((svg) => svg.outerHTML).join(" ");
+      })()`),
+    { timeout: 20000 },
+  );
+  check(
+    "a diagram cannot add CSS of its own or draw with the page's URL",
+    Boolean(diagrams) && !/stroke-width: [79]px|probe-font|url\(["']?http/.test(diagrams),
+    diagrams ? diagrams.match(/stroke-width: [79]px|probe-font|url\(["']?http[^)]*/g) : diagrams,
+  );
+  await waitFor(() => page.eval(`Boolean(document.getElementById("after-style"))`));
+  const styles = await page.eval(`({
+    outline: getComputedStyle(document.getElementById("content")).outlineColor,
+    links: document.querySelectorAll("#content link").length,
+    token: document.documentElement.outerHTML.includes(${JSON.stringify(token)}),
+  })`);
+  check("a <style> or <link> in the document is dropped", styles.outline !== "rgb(1, 2, 3)" && styles.links === 0, styles);
+  check("nothing in the page holds the token", styles.token === false);
 
   // An href from raw HTML may hold a line break; the page must still render.
   await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, {

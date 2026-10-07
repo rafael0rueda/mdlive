@@ -7,6 +7,31 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Changed
+
+- `<style>` blocks in a Markdown file are removed from the preview and from
+  exports, as on GitHub. `style` attributes still apply, and the `css` option
+  styles the preview
+- A Mermaid diagram can no longer set `themeCSS`, `themeVariables`,
+  `fontFamily`, `altFontFamily` or `arrowMarkerAbsolute` for itself, in a
+  directive or its front matter: diagrams use the colors of the preview
+
+### Security
+
+- A Markdown file could read the token of the preview URL: its `<style>`
+  could match the URLs of the document's images and links, which contained
+  the token, and send it to another server piece by piece. With the token,
+  another user or program on the machine could read the previewed buffers
+  and the files next to them. Those URLs are now relative to the page, so
+  nothing in the page holds the token. A Mermaid diagram could do the same
+  with its `themeCSS` and `arrowMarkerAbsolute` options
+- A `.js` file next to the Markdown is served as text, so the page can only
+  run its own bundled scripts
+- A request to tick a task on a line past the end of the buffer is refused,
+  instead of raising an error in Neovim
+- Redirect files left in the cache directory by a Neovim that was killed are
+  removed the next time a preview opens
+
 ## [0.4.0] - 2026-09-30
 
 ### Changed

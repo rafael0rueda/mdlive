@@ -79,7 +79,24 @@ local ok, err = xpcall(function()
     "blocks encoded traversal",
     get(session .. "/files/" .. buf .. "/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd") == 404
   )
+  local files = session .. "/files/" .. buf
+  check(
+    "blocks traversal with encoded separators, encoded twice or cut short by a NUL",
+    get(files .. "/..%2f..%2f..%2f..%2f..%2f..%2fetc%2fpasswd") == 404
+      and get(files .. "/%252e%252e/%252e%252e/%252e%252e/%252e%252e/etc/passwd") == 404
+      and get(files .. "/../../../../../../etc/passwd%00/assets/logo.svg") == 404
+  )
+  check("serves the page at one path only", get(session .. "/preview/" .. buf .. "/") == 404)
   check("rejects foreign Host header", get("/app/preview.js", { "-H", "Host: evil.example" }) == 403)
+  for _, host in ipairs({
+    "localhost.evil.example",
+    "127.0.0.1.evil.example",
+    "evil.example:" .. base:match(":(%d+)$"),
+    "",
+  }) do
+    check(("rejects the Host header %q"):format(host), get("/app/preview.js", { "-H", "Host: " .. host }) == 403)
+  end
+  check("rejects a request without a Host header", get("/app/preview.js", { "-H", "Host:" }) == 403)
   -- Through an SSH tunnel, the browser names its own end, on any port.
   check("accepts a forwarded local Host header", get("/app/preview.js", { "-H", "Host: localhost:9" }) == 200)
 
@@ -175,11 +192,22 @@ local ok, err = xpcall(function()
   check("rejects a range past the end", get(notes_files .. "/big.txt", { "-H", "Range: bytes=99999999-" }) == 416)
   vim.fn.mkdir(notes .. "/sub", "p")
   check("serves no directories", get(notes_files .. "/sub") == 404)
+  -- The page may run scripts of its own origin: only the bundled ones are scripts.
+  vim.fn.writefile({ "document.title = 'probe'" }, notes .. "/probe.js")
+  local head_only = { "-o", devnull, "-D", "-" }
+  local _, script_headers = get(notes_files .. "/probe.js", head_only)
+  local _, app_headers = get("/app/preview.js", head_only)
+  check(
+    "a script next to the markdown is served as text",
+    script_headers:lower():find("content-type: text/plain", 1, true)
+      and script_headers:lower():find("x-content-type-options: nosniff", 1, true)
+      and app_headers:lower():find("content-type: text/javascript", 1, true),
+    script_headers
+  )
   check("unknown buffer events 404", get(session .. "/events/99999") == 404)
   -- Back to the demo buffer's preview.
   vim.cmd("MdLive")
 
-  local head_only = { "-o", devnull, "-D", "-" }
   local _, page_headers = get(session .. "/preview/" .. buf, head_only)
   page_headers = page_headers:lower()
   check(
@@ -328,6 +356,11 @@ local ok, err = xpcall(function()
   check(
     "open link rejects other origins",
     get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: http://evil.example" }) == 403
+  )
+  check(
+    "open link rejects a missing or null origin",
+    get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "X-MdLive: 1" }) == 403
+      and get(open .. "docs%2Fguide.md", { "-X", "POST", "-H", "X-MdLive: 1", "-H", "Origin: null" }) == 403
   )
   check("open link only opens markdown", get(open .. "assets%2Flogo.svg", same_origin) == 404)
   -- A link may not reach outside the markdown's directory and the cwd, which
@@ -482,6 +515,12 @@ local ok, err = xpcall(function()
   check(
     "task needs a state",
     get(task .. "&checked=yes", same_origin) == 404 and buf_line(task_line):find("[ ]", 1, true)
+  )
+  check(
+    "a task line past the end of the buffer is refused",
+    get(session .. "/task/" .. buf .. "?line=99999999999999999999&checked=1", same_origin) == 404
+      and get(session .. "/task/" .. buf .. "?line=" .. vim.api.nvim_buf_line_count(buf) .. "&checked=1", same_origin)
+        == 404
   )
 
   -- Export: the connected tab renders the page and Neovim writes it.
@@ -793,7 +832,20 @@ local ok, err = xpcall(function()
   vim.api.nvim_exec_autocmds("VimLeavePre", { group = "mdlive" })
   check("the redirect file is removed when Neovim quits", vim.uv.fs_stat(redirect) == nil)
 
+  -- A Neovim that was killed leaves its redirect file: the next one removes it.
   local cache = vim.fs.joinpath(vim.fn.stdpath("cache"), "mdlive")
+  local stale, other = cache .. "/open-0123456789abcdef.html", cache .. "/notes.html"
+  vim.fn.writefile({ "stale" }, stale)
+  vim.fn.writefile({ "not a redirect" }, other)
+  local hour_ago = os.time() - 3600
+  vim.uv.fs_utime(stale, hour_ago, hour_ago)
+  vim.uv.fs_utime(other, hour_ago, hour_ago)
+  browser_argument()
+  check("old redirect files are removed, and nothing else", vim.wait(2000, function()
+    return vim.uv.fs_stat(stale) == nil
+  end, 20) and vim.uv.fs_stat(other) ~= nil)
+  vim.fn.delete(other)
+
   local before = #vim.fn.readdir(cache)
   argument = browser_argument({ browser_redirect = false })
   check(

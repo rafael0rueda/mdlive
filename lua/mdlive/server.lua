@@ -78,6 +78,10 @@ local mime = {
   webm = "video/webm",
 }
 
+-- Files next to the markdown are never scripts: the page's policy lets it run
+-- scripts of this origin, which must only be the bundled ones in /app.
+local file_mime = setmetatable({ js = "text/plain; charset=utf-8" }, { __index = mime })
+
 local function close(handle)
   if handle and not handle:is_closing() then
     handle:close()
@@ -206,7 +210,7 @@ local chunk_size = 256 * 1024
 
 -- Streams a file in chunks, waiting for each to be sent, so large media neither
 -- blocks Neovim nor has to fit in memory. Range requests let videos seek.
-local function serve_file(sock, path, headers, range)
+local function serve_file(sock, path, headers, range, types)
   if not path then
     return text(sock, "404 Not Found", "Not found")
   end
@@ -233,7 +237,7 @@ local function serve_file(sock, path, headers, range)
         first, last = 0, stat.size - 1
       end
       local ext = (path:match("%.(%w+)$") or ""):lower()
-      headers["Content-Type"] = mime[ext] or "application/octet-stream"
+      headers["Content-Type"] = (types or mime)[ext] or "application/octet-stream"
       headers["Cache-Control"] = "no-cache"
       headers["Accept-Ranges"] = "bytes"
       headers["Content-Length"] = ("%d"):format(last - first + 1)
@@ -365,7 +369,8 @@ local function handle(sock, request)
     return text(sock, "405 Method Not Allowed", "Method not allowed")
   end
 
-  if path:match("^/preview/%d+/?$") then
+  -- At this path only: the page's file URLs are relative to it.
+  if path:match("^/preview/%d+$") then
     local page = vim.fs.joinpath(app_dir, "index.html")
     return serve_file(sock, page, { ["Content-Security-Policy"] = page_policy }, headers.range)
   end
@@ -386,7 +391,8 @@ local function handle(sock, request)
     local full = dir and resolve(dir, file, h.file_roots(dir))
     -- PDFs cannot script this origin, and browsers refuse to show them sandboxed.
     local is_pdf = full and full:lower():match("%.pdf$")
-    return serve_file(sock, full, { ["Content-Security-Policy"] = not is_pdf and file_policy or nil }, headers.range)
+    local file_headers = { ["Content-Security-Policy"] = not is_pdf and file_policy or nil }
+    return serve_file(sock, full, file_headers, headers.range, file_mime)
   end
 
   text(sock, "404 Not Found", "Not found")

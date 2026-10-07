@@ -336,6 +336,9 @@ local function toggle_task(bufnr, line, checked)
   if not vim.bo[bufnr].modifiable then
     return nil, "the buffer is not modifiable"
   end
+  if line >= api.nvim_buf_line_count(bufnr) then
+    return nil, "the buffer changed, try again"
+  end
   local text = api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
   -- A list marker, in blockquotes too, then the box.
   local prefix, mark = text:match("^([%s>]*[-*+]%s+%[)([ xX])%]")

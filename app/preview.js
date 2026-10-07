@@ -6,6 +6,9 @@
   const pageMatch = /** @type {RegExpMatchArray} */ (location.pathname.match(/^(\/[0-9a-f]+)\/preview\/(\d+)/));
   const session = pageMatch[1];
   let bufnr = pageMatch[2];
+  // The files next to the buffer, relative to the page: the markdown's HTML can
+  // carry CSS and read attributes with it, so no attribute holds the token.
+  const filesPrefix = () => `../files/${bufnr}/`;
   const root = document.documentElement;
   // Both are in index.html.
   const contentEl = /** @type {HTMLElement} */ (document.getElementById("content"));
@@ -226,7 +229,7 @@
 
     // Relative images and media (<img>, <picture> sources, <video>, <audio>) are
     // served from the markdown file's directory.
-    const fileUrl = (url) => (url && isRelative(url) ? `${session}/files/${bufnr}/${url}` : url);
+    const fileUrl = (url) => (url && isRelative(url) ? filesPrefix() + url : url);
     for (const el of fragment.querySelectorAll("[src], [poster]")) {
       for (const name of ["src", "poster"]) {
         if (el.hasAttribute(name)) el.setAttribute(name, fileUrl(el.getAttribute(name)));
@@ -249,7 +252,7 @@
       if (!path) continue;
       // Local files are served raw (keeping fragments like #page=3 for PDFs);
       // markdown files are opened in Neovim on click.
-      link.setAttribute("href", `${session}/files/${bufnr}/${path}${hash}`);
+      link.setAttribute("href", filesPrefix() + path + hash);
       if (isMarkdown(path)) {
         link.dataset.openPath = safeDecode(path);
         link.dataset.openHash = hash;
@@ -495,6 +498,9 @@
     const html = (frontMatter ? frontMatterHtml(frontMatter) : "") + md.render(body, env);
     template.innerHTML = DOMPurify.sanitize(html, {
       ADD_TAGS: ["semantics", "annotation"],
+      // A <style> could restyle the whole page, and send what its selectors
+      // match in the document to another server.
+      FORBID_TAGS: ["style"],
       FORBID_ATTR: scriptAttributes,
     });
     postProcess(template.content, env);
@@ -614,7 +620,28 @@
       return;
     }
     if (mermaidThemeKey !== theme) {
-      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables });
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "base",
+        themeVariables,
+        // What a diagram may not configure for itself, in a directive or its front
+        // matter: Mermaid's own list, then the options that put CSS of the
+        // document's in the drawing, or the page's URL, which holds the token.
+        secure: [
+          "secure",
+          "securityLevel",
+          "startOnLoad",
+          "maxTextSize",
+          "suppressErrorRendering",
+          "maxEdges",
+          "arrowMarkerAbsolute",
+          "themeCSS",
+          "themeVariables",
+          "fontFamily",
+          "altFontFamily",
+        ],
+      });
       mermaidThemeKey = theme;
     }
 
@@ -919,8 +946,7 @@
   // A standalone page: styles and fonts inlined, relative files resolved through `base`.
   async function standaloneHtml(base) {
     const page = /** @type {HTMLElement} */ (contentEl.cloneNode(true));
-    // Rewriting these also keeps the token out of the exported file.
-    const prefix = `${session}/files/${bufnr}/`;
+    const prefix = filesPrefix();
     const local = (url) => (url.startsWith(prefix) ? base + url.slice(prefix.length) : url);
     for (const el of page.querySelectorAll("[src], [href], [poster]")) {
       for (const name of ["src", "href", "poster"]) {

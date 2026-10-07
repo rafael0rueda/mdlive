@@ -159,15 +159,17 @@ for example a README in a repository you just cloned:
 - HTML is sanitized with DOMPurify, and a Content-Security-Policy only allows
   the plugin's own scripts, so embedded scripts and event handlers never run.
   Attributes the page uses for its own features are removed from that HTML,
-  so a web link cannot pose as a link that opens a file in Neovim.
+  so a web link cannot pose as a link that opens a file in Neovim. `<style>`
+  blocks are removed too: a document cannot restyle the page around it.
 - Images and linked files are served only from the Markdown file's directory
   and the current working directory, with a `sandbox` policy so an `.html` or
-  `.svg` file cannot run scripts either. Symlinks are resolved before that
+  `.svg` file cannot run scripts either, and a `.js` file is served as text. Symlinks are resolved before that
   check, so a link cannot point outside those directories.
 - Preview URLs contain a random token, new each time the server starts. The
   page, its events, files and actions all need it, so other users or programs
   on the machine cannot read your buffers or files through the server. Files
-  are only served for buffers that are being previewed.
+  are only served for buffers that are being previewed. The token is not in
+  the page's HTML, where the styles or links of a document could reach it.
 - The server listens on `127.0.0.1` and rejects requests with a non-local
   `Host` header. Requests that act in Neovim (opening a linked file, moving
   the cursor, scrolling the window, ticking a task, saving an export) need a
