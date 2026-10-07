@@ -197,6 +197,9 @@ local ok, err = xpcall(function()
   local head_only = { "-o", devnull, "-D", "-" }
   local _, script_headers = get(notes_files .. "/probe.js", head_only)
   local _, app_headers = get("/app/preview.js", head_only)
+  vim.fn.writefile({ "not really a sound" }, notes .. "/sound.mp3")
+  local _, sound_headers = get(notes_files .. "/sound.mp3", head_only)
+  check("audio files have their type", sound_headers:lower():find("content-type: audio/mpeg", 1, true), sound_headers)
   check(
     "a script next to the markdown is served as text",
     script_headers:lower():find("content-type: text/plain", 1, true)

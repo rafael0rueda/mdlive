@@ -76,6 +76,12 @@ local mime = {
   txt = "text/plain; charset=utf-8",
   mp4 = "video/mp4",
   webm = "video/webm",
+  mov = "video/quicktime",
+  mp3 = "audio/mpeg",
+  ogg = "audio/ogg",
+  wav = "audio/wav",
+  m4a = "audio/mp4",
+  flac = "audio/flac",
 }
 
 -- Files next to the markdown are never scripts: the page's policy lets it run
