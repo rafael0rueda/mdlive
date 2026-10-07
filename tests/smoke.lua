@@ -51,7 +51,7 @@ local ok, err = xpcall(function()
   local function curl(path, extra, max_time)
     local args = { "curl", "-s", "--path-as-is", "-w", "\n%{http_code}", "--max-time", tostring(max_time or 3) }
     vim.list_extend(args, extra or {})
-    table.insert(args, base .. path)
+    table.insert(args, path:match("^http:") and path or base .. path)
     local result
     vim.system(args, { text = true }, function(r)
       result = r
@@ -69,7 +69,9 @@ local ok, err = xpcall(function()
   end
   -- A stream of the buffer's events, once it is connected.
   local function connected(bufnr, seconds)
-    local events_stream = curl(session .. "/events/" .. bufnr, { "-N" }, seconds or 1)
+    -- The server as it runs now: its port and token change when it starts again.
+    local events_url = require("mdlive.server").url(bufnr):gsub("/preview/", "/events/")
+    local events_stream = curl(events_url, { "-N" }, seconds or 1)
     vim.wait(2000, function()
       return require("mdlive.server").client_count(bufnr) > 0
     end, 10)
@@ -314,6 +316,44 @@ local ok, err = xpcall(function()
     "setup() warns about wrong options and uses their defaults",
     warning:find("`port`", 1, true) and warning:find("`colour`", 1, true) and require("mdlive.config").options.port == 0,
     warning
+  )
+  -- Values of the right type that cannot work keep their default too.
+  warnings = {}
+  vim.notify = function(msg)
+    table.insert(warnings, msg)
+  end
+  setup({ host = "localhost", port = 80.5, debounce_ms = -5, browser = true })
+  local refused = vim.deepcopy(require("mdlive.config").options)
+  local wildcard = "127.0.0.1"
+  for _, every in ipairs({ "0.0.0.0", "::", "::0.0.0.0", "::FFFF:0.0.0.0", "0:0:0:0:0:0:0:0" }) do
+    setup({ host = every })
+    if require("mdlive.config").options.host ~= "127.0.0.1" then
+      wildcard = every
+    end
+  end
+  warning = table.concat(warnings, "\n")
+  warnings = {}
+  setup({ host = "::1", port = 8090, debounce_ms = 0, browser = false })
+  local accepted = vim.deepcopy(require("mdlive.config").options)
+  vim.notify = real_notify
+  check(
+    "setup() refuses a host that is a name or every address, and numbers that cannot work",
+    refused.host == "127.0.0.1"
+      and refused.port == 0
+      and refused.debounce_ms == 150
+      and refused.browser == nil
+      and wildcard == "127.0.0.1"
+      and warning:find("`host` should be an IP address", 1, true)
+      and warning:find("`host` should be the address of one interface", 1, true)
+      and warning:find("`port` should be a whole number", 1, true)
+      and warning:find("`debounce_ms` should be", 1, true)
+      and warning:find("`browser` should be false", 1, true),
+    warning
+  )
+  check(
+    "setup() accepts an IPv6 address, a fixed port and no delay",
+    #warnings == 0 and accepted.host == "::1" and accepted.port == 8090 and accepted.debounce_ms == 0,
+    vim.inspect(warnings)
   )
   setup()
 
@@ -741,6 +781,35 @@ local ok, err = xpcall(function()
   -- curl reports status 000 when nothing is listening.
   check("server stops with last preview", get("/app/preview.js") == 0)
 
+  -- A fixed port that another program has: the message says which, and the way out.
+  local taken = assert(vim.uv.new_tcp())
+  taken:bind("127.0.0.1", 0)
+  taken:listen(1, function() end)
+  local taken_port = taken:getsockname().port
+  setup({ port = taken_port })
+  local quiet_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- the error is checked below
+  vim.notify = function() end
+  local started, start_err = require("mdlive").enable(true, { buf = guide })
+  vim.notify = quiet_notify
+  taken:close()
+  check(
+    "a port that is taken is reported with the address and the way out",
+    not started
+      and (start_err or ""):find("cannot listen on 127.0.0.1:" .. taken_port, 1, true)
+      and (start_err or ""):find("port = 0", 1, true)
+      and not require("mdlive").is_enabled({ buf = guide }),
+    start_err
+  )
+  ---@diagnostic disable-next-line: missing-fields -- it fails before it needs the handlers
+  local returned, port_or_nil, host_err = pcall(require("mdlive.server").start, { host = "localhost", port = 0 })
+  check(
+    "the server returns an error for a host that is not an address",
+    returned and port_or_nil == nil and type(host_err) == "string",
+    { returned, port_or_nil, host_err }
+  )
+  setup()
+
   opened = nil
   require("mdlive").enable(true, { buf = guide })
   check("a new server start gets a new token", opened and not opened:find(session .. "/", 1, true), opened)
@@ -790,6 +859,57 @@ local ok, err = xpcall(function()
   vim.cmd("MdLive toggle | let g:mdlive_bar = 1")
   check(":MdLive can be followed by another command", mdlive.is_enabled({ buf = guide }) and vim.g.mdlive_bar == 1)
   vim.cmd("MdLive toggle")
+
+  -- What the commands say, and :MdLive toggle when the tab of the preview was closed.
+  local said = {}
+  local real_say = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg)
+    table.insert(said, msg)
+  end
+  vim.cmd("MdLive")
+  check(
+    ":MdLive names the file and keeps the URL to itself",
+    said[#said] == "[mdlive] previewing guide.md",
+    said[#said]
+  )
+  local tab = connected(guide, 0.3)
+  tab()
+  vim.wait(2000, function()
+    return require("mdlive.server").client_count(guide) == 0
+  end, 10)
+  opened = nil
+  vim.cmd("MdLive toggle")
+  check(
+    ":MdLive toggle opens the preview again when its tab was closed",
+    mdlive.is_enabled({ buf = guide }) and opened ~= nil,
+    opened
+  )
+  vim.cmd("MdLive toggle")
+  check(
+    ":MdLive toggle stops a preview whose tab has not connected yet",
+    not mdlive.is_enabled({ buf = guide }) and said[#said] == "[mdlive] preview stopped",
+    said[#said]
+  )
+  require("mdlive.config").options.browser = false
+  vim.cmd("MdLive")
+  check(
+    "with browser = false, :MdLive shows the URL to open",
+    said[#said] == "[mdlive] previewing guide.md at " .. require("mdlive.server").url(guide),
+    said[#said]
+  )
+  setup({ follow = false })
+  vim.cmd("MdLive stop | MdLive stop")
+  check(
+    ":MdLive stop says what it did",
+    said[#said - 1] == "[mdlive] preview stopped" and said[#said] == "[mdlive] preview stopped",
+    vim.inspect(said)
+  )
+  vim.cmd("MdLive stop")
+  check(":MdLive stop says so when there is no preview", said[#said] == "[mdlive] no preview to stop", said[#said])
+  vim.notify = real_say
+  mdlive.enable(true, { buf = buf })
+  vim.wait(200)
 
   -- Mistakes are reported and do nothing.
   local command_messages = {}

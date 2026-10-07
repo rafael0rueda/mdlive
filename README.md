@@ -70,8 +70,8 @@ require("mdlive").setup()
 | Command                    | Action                                                                 |
 | -------------------------- | ---------------------------------------------------------------------- |
 | `:MdLive`                  | Start the preview and open it in the browser (reuses an open tab)      |
-| `:MdLive stop`             | Stop the preview (in follow mode, from any buffer)                     |
-| `:MdLive toggle`           | Toggle the preview                                                     |
+| `:MdLive stop`             | Stop the preview (from a buffer without one, every preview)            |
+| `:MdLive toggle`           | Toggle the preview (opens it again when its tab was closed)            |
 | `:MdLive url`              | Show the preview URL and copy it to the clipboard                      |
 | `:MdLive[!] export [file]` | Save the preview as HTML, next to the file by default (`!` overwrites) |
 

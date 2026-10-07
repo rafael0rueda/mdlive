@@ -19,14 +19,27 @@ local subcommands = {
   stop = {
     run = function()
       local mdlive = require("mdlive")
+      if not mdlive.is_enabled() then
+        return notify("no preview to stop")
+      end
       -- From a buffer without a preview, this stops every preview, such as the one following you.
       mdlive.enable(false, mdlive.is_enabled({ buf = 0 }) and { buf = 0 } or nil)
+      notify("preview stopped")
     end,
   },
   toggle = {
     run = function()
       local mdlive = require("mdlive")
-      mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 })
+      local on = mdlive.is_enabled({ buf = 0 })
+      -- A preview whose tab was closed shows nowhere: open it again instead of
+      -- stopping what looks stopped already.
+      if on and require("mdlive.server").tabs_closed(vim.api.nvim_get_current_buf()) then
+        return mdlive.enable(true, { buf = 0 })
+      end
+      mdlive.enable(not on, { buf = 0 })
+      if on then
+        notify("preview stopped")
+      end
     end,
   },
   url = {

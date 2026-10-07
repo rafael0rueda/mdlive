@@ -1,7 +1,7 @@
 local M = {}
 
 ---@class mdlive.Opts
----@field host? string Address the preview server binds to.
+---@field host? string IP address the preview server binds to.
 ---@field file_root? string Directory the preview may read files from; nil uses the working directory.
 ---@field port? integer Port of the server, 0 picks a free one.
 ---@field browser? string|string[]|fun(url: string)|boolean Opens the preview; nil uses the system default browser, false opens nothing.
@@ -36,7 +36,8 @@ local M = {}
 
 ---@type mdlive.Config
 M.defaults = {
-  -- Address the preview server binds to. Keep it on localhost unless you know why not.
+  -- Address the preview server binds to, not a name. Keep it on a loopback
+  -- address unless you know why not.
   host = "127.0.0.1",
   -- 0 picks a free port automatically.
   port = 0,
@@ -96,6 +97,52 @@ M.types = {
   css = { "string" },
 }
 
+-- Whether `host` is an IPv4 or IPv6 address, which is all the server binds to.
+local function is_address(host)
+  local parts = { host:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
+  if #parts == 4 then
+    for _, part in ipairs(parts) do
+      if tonumber(part) > 255 then
+        return false
+      end
+    end
+    return true
+  end
+  return host:find(":", 1, true) ~= nil and host:match("^[%x:.]+$") ~= nil
+end
+
+-- What an option of the right type must also be: returns what it should be
+-- when it is not.
+---@type table<string, fun(value: any): string|nil>
+M.checks = {
+  host = function(host)
+    if not is_address(host) then
+      return "an IP address such as 127.0.0.1, not a name"
+    end
+    -- Requests to any other address than `host` are refused (the Host header
+    -- check), so listening on all of them only looks like it would work.
+    -- However it is written: 0.0.0.0, ::, ::0.0.0.0 or ::ffff:0.0.0.0.
+    if not host:lower():gsub("^::ffff:", ""):find("[1-9a-f]") then
+      return "the address of one interface, not every address"
+    end
+  end,
+  port = function(port)
+    if port % 1 ~= 0 or port < 0 or port > 65535 then
+      return "a whole number from 0 to 65535"
+    end
+  end,
+  debounce_ms = function(ms)
+    if ms % 1 ~= 0 or ms < 0 then
+      return "a whole number of milliseconds, 0 or more"
+    end
+  end,
+  browser = function(browser)
+    if browser == true then
+      return "false, a string, a list or a function (nil for the default browser)"
+    end
+  end,
+}
+
 ---@type mdlive.Config
 M.options = vim.deepcopy(M.defaults)
 
@@ -112,7 +159,8 @@ end
 M.problems = {}
 
 --- Merges `opts` into the defaults. Unknown options and options of the wrong
---- type are reported, and the wrong ones keep their default.
+--- type or with a value that cannot work are reported, and those keep their
+--- default.
 ---@param opts? mdlive.Opts
 function M.setup(opts)
   local options = vim.deepcopy(M.defaults)
@@ -125,7 +173,13 @@ function M.setup(opts)
       local problem = "option `%s` should be a %s, got %s: using the default"
       table.insert(M.problems, problem:format(key, table.concat(types, " or "), type(value)))
     else
-      options[key] = value
+      local expected = M.checks[key] and M.checks[key](value)
+      if expected then
+        local problem = "option `%s` should be %s, got %s: using the default"
+        table.insert(M.problems, problem:format(key, expected, vim.inspect(value)))
+      else
+        options[key] = value
+      end
     end
   end
   M.options = options

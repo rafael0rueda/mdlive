@@ -99,16 +99,18 @@ end
 
 --- Opens `url` with the `browser` option: a function gets the URL itself, and a
 --- program is started on the redirect file, or on the URL if that fails.
---- `false` opens nothing.
+--- `false` opens nothing. Returns whether something was started to open it.
 ---@param url string
+---@return boolean opened
 function M.open(url)
   local browser = config.options.browser
   if browser == false then
-    return
+    return false
   end
   if type(browser) == "function" then
     -- Runs inside Neovim: the URL is not passed to another program.
-    return browser(url)
+    browser(url)
+    return true
   end
   -- Everything below starts a program with the URL in its arguments. Writing
   -- the redirect must never keep the preview from opening: on any failure the
@@ -126,12 +128,13 @@ function M.open(url)
     if not ok then
       notify("could not start browser: " .. tostring(err), vim.log.levels.ERROR)
     end
-    return
+    return ok
   end
   local _, err = vim.ui.open(target)
   if err then
-    notify(err .. " (open " .. url .. " manually)", vim.log.levels.WARN)
+    notify(err, vim.log.levels.WARN)
   end
+  return err == nil
 end
 
 --- Removes the redirect files that are still there, when Neovim quits before
