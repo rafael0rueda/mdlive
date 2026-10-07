@@ -59,7 +59,7 @@ Without a plugin manager, clone the latest release into a package directory,
 which Neovim loads at startup:
 
 ```sh
-git clone --branch v0.4.1 https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
+git clone --branch v0.5.0 https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
 ```
 
 Or from any other directory:
