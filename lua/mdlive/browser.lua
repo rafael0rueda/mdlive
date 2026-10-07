@@ -20,6 +20,20 @@ local function drop_redirect(path)
   vim.uv.fs_unlink(path, function() end)
 end
 
+-- Removes the redirect files a Neovim that was killed left behind.
+local function sweep_redirects(dir)
+  local now = os.time()
+  for name, kind in vim.fs.dir(dir) do
+    local path = vim.fs.joinpath(dir, name)
+    if kind == "file" and name:match("^open%-%x+%.html$") and not redirects[path] then
+      local stat = vim.uv.fs_stat(path)
+      if stat and now - stat.mtime.sec > 60 then
+        vim.uv.fs_unlink(path, function() end)
+      end
+    end
+  end
+end
+
 local function escape_html(text)
   return (
     text:gsub("[&<>\"']", {
@@ -44,6 +58,7 @@ local function redirect_file(url)
   if not created or result == 0 then
     return nil
   end
+  sweep_redirects(dir)
   local name = assert(vim.uv.random(8)):gsub(".", function(c)
     return ("%02x"):format(c:byte())
   end)

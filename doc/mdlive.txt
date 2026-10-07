@@ -473,9 +473,12 @@ just cloned, so the preview treats it as untrusted:
 - The HTML is sanitized with DOMPurify, and a Content-Security-Policy only
   allows the plugin's own scripts, so embedded scripts never run. Attributes
   the page uses for its own features are removed from it, so a web link
-  cannot pose as a link that opens a file in Neovim.
+  cannot pose as a link that opens a file in Neovim. `<style>` blocks are
+  removed too, so a document cannot restyle the page around it; `style`
+  attributes are kept. A Mermaid diagram cannot set its own CSS or fonts.
 - Files are served only from the directory of the Markdown file and the
-  project it is in, in a sandbox that blocks scripts. A wiki link to a note
+  project it is in, in a sandbox that blocks scripts, and a `.js` file is
+  served as text. A wiki link to a note
   that is not next to the file is looked for only there too. Symlinks are resolved
   first, so neither a file the page fetches nor a link that opens a file in
   Neovim can point outside those directories. The working directory counts as
@@ -486,6 +489,8 @@ just cloned, so the preview treats it as untrusted:
   every request for the page, its events, files or actions needs it. Other
   users or programs on the machine cannot read your buffers or files through
   the server. Files are only served for buffers that are being previewed.
+  The token is not in the page's HTML: images and links point to files with
+  URLs relative to the page.
 - The URL, and with it the token, is not passed to the browser on a command
   line, which every user on the machine can read: the browser is started on a
   file only you can read that redirects to the preview. See

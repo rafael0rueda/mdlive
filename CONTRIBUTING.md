@@ -114,7 +114,8 @@ which the smoke and browser tests cover:
 
 - Every URL except `/app/...` needs the random token, new each time the
   server starts. The token never ends up in the process list (see
-  `browser_redirect`), in exported HTML or in error messages.
+  `browser_redirect`), in the page's DOM, in exported HTML or in error
+  messages.
 - Files are served only for buffers being previewed, and only from the
   buffer's directory and the working directory (or `file_root`) when the file
   is inside it, after resolving symlinks. Paths go through `server.resolve()`;
@@ -122,9 +123,11 @@ which the smoke and browser tests cover:
 - The server binds to `127.0.0.1` and rejects non-local `Host` headers.
   Endpoints that act in Neovim require same-origin requests with the custom
   header.
-- Rendered HTML goes through DOMPurify, and the page's CSP allows only the
-  plugin's own scripts. Served files get a `sandbox` CSP, and exported HTML
-  has a CSP that blocks scripts.
+- Rendered HTML goes through DOMPurify, without `<style>`, Mermaid diagrams
+  cannot configure their own CSS (the `secure` list), and the page's CSP
+  allows only the plugin's own scripts. Served files get a `sandbox` CSP and
+  are never typed as scripts, and exported HTML has a CSP that blocks
+  scripts.
 - Error responses to the browser don't include Lua messages or local paths.
 
 Please report a vulnerability privately, through GitHub's
