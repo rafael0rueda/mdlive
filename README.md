@@ -51,7 +51,7 @@ Requires Neovim 0.11+. Full documentation is in `:help mdlive`, and
 Without a plugin manager, clone the latest release and add it to `runtimepath`:
 
 ```sh
-git clone --branch v0.4.0 https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
+git clone --branch v0.4.1 https://github.com/rafael0rueda/mdlive ~/.local/share/nvim/site/pack/plugins/start/mdlive
 ```
 
 ```lua
