@@ -341,6 +341,12 @@
 
   // ------------------------------------------------------------------ render
 
+  // The element of the document with this id. The page has ids of its own
+  // ("content", "outline", "status"), which a heading can be named like.
+  function anchorTarget(id) {
+    return id ? contentEl.querySelector(`#${CSS.escape(id)}`) : null;
+  }
+
   // Diagrams and formulas are filled in after patching. Their placeholders are
   // compared by source, so unchanged ones keep what was rendered into them.
   function renderedKey(node) {
@@ -361,6 +367,8 @@
     for (const { name, value } of Array.from(source.attributes)) {
       if (target.getAttribute(name) !== value) target.setAttribute(name, value);
     }
+    // Once a checkbox was clicked, its attribute no longer says how it shows.
+    if (target instanceof HTMLInputElement) target.checked = source.hasAttribute("checked");
   }
 
   // Updates `prev` in place to match `next` so unchanged nodes (images, diagrams)
@@ -510,7 +518,7 @@
     buildOutline();
     queueMermaid();
     if (pendingAnchor !== null) {
-      document.getElementById(pendingAnchor)?.scrollIntoView();
+      anchorTarget(pendingAnchor)?.scrollIntoView();
       pendingAnchor = null;
     } else if (cursor) {
       scrollToLine(cursor);
@@ -789,12 +797,26 @@
   /** @type {{ line: number, el: HTMLElement }[] | null} */
   let lineIndex = null;
 
+  // Inside a <details> that is closed, and not in the <summary> it still shows.
+  function collapsed(el) {
+    for (let details = el.parentElement?.closest("details:not([open])"); details; ) {
+      const summary = details.querySelector(":scope > summary");
+      if (!summary || !summary.contains(el)) return true;
+      details = details.parentElement?.closest("details:not([open])");
+    }
+    return false;
+  }
+
+  // Opening or closing a <details> changes which blocks are shown; the event does not bubble.
+  contentEl.addEventListener("toggle", () => (lineIndex = null), true);
+
+  // Blocks that are not shown have no place on the page to scroll to or from.
   function lineBlocks() {
     if (!lineIndex) {
       const footnotes = new Set(contentEl.querySelectorAll(".footnotes [data-line]"));
       lineIndex = [];
       for (const el of /** @type {NodeListOf<HTMLElement>} */ (contentEl.querySelectorAll("[data-line]"))) {
-        if (!footnotes.has(el)) lineIndex.push({ line: Number(el.dataset.line), el });
+        if (!footnotes.has(el) && !collapsed(el)) lineIndex.push({ line: Number(el.dataset.line), el });
       }
       lineIndex.sort((a, b) => a.line - b.line);
     }
@@ -1052,9 +1074,24 @@
       return;
     }
 
+    // A link to a heading named like one of the page's own ids would go to that part of the page.
+    const plain = event.button === 0 && !(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey);
+    const anchor = target.closest('a[href^="#"]');
+    if (anchor) {
+      if (!plain) return;
+      const id = safeDecode(/** @type {string} */ (anchor.getAttribute("href")).slice(1));
+      const heading = anchorTarget(id);
+      if (heading && document.getElementById(id) !== heading) {
+        event.preventDefault();
+        history.pushState(null, "", `#${encodeURIComponent(id)}`);
+        heading.scrollIntoView();
+      }
+      return;
+    }
+
     // Relative markdown links open the file in Neovim, then this tab follows it.
     const link = /** @type {HTMLElement | null} */ (target.closest("a[data-open-path]"));
-    if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (!link || !plain) return;
     event.preventDefault();
     const { openPath = "", openHash = "" } = link.dataset;
     // Neovim changes buffer while handling this; don't also follow its "switch" event.

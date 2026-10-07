@@ -81,7 +81,9 @@ body {
   background: var(--selection);
 }
 
-#status {
+/* The page's own parts are children of <body>: an element of the document
+   with one of their ids, such as a heading named "Outline", is not one. */
+body > #status {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -94,17 +96,17 @@ body {
   font: 13px/1.4 system-ui, sans-serif;
 }
 
-#status.retry {
+body > #status.retry {
   cursor: pointer;
 }
 
-#status.retry:hover {
+body > #status.retry:hover {
   color: var(--fg);
 }
 
 /* The outline: the document's headings on the left, opened with the button
    above them. Wide windows make room for it; on narrow ones it covers the text. */
-#outline-toggle {
+body > #outline-toggle {
   position: fixed;
   top: 8px;
   left: 8px;
@@ -120,12 +122,12 @@ body {
   cursor: pointer;
 }
 
-#outline-toggle:hover,
-#outline-toggle[aria-expanded="true"] {
+body > #outline-toggle:hover,
+body > #outline-toggle[aria-expanded="true"] {
   color: var(--fg);
 }
 
-#outline {
+body > #outline {
   position: fixed;
   top: 0;
   bottom: 0;
@@ -140,13 +142,13 @@ body {
   box-shadow: 0 0 24px rgb(0 0 0 / 0.2);
 }
 
-#outline ul {
+body > #outline ul {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-#outline a {
+body > #outline a {
   display: block;
   padding: 3px 8px;
   border-radius: 4px;
@@ -155,27 +157,27 @@ body {
   overflow-wrap: anywhere;
 }
 
-#outline a:hover {
+body > #outline a:hover {
   color: var(--fg);
 }
 
-#outline a[aria-current] {
+body > #outline a[aria-current] {
   background: var(--bg);
   color: var(--link);
 }
 
-#outline a[data-depth="1"] { padding-left: 20px; }
-#outline a[data-depth="2"] { padding-left: 32px; }
-#outline a[data-depth="3"] { padding-left: 44px; }
-#outline a[data-depth="4"] { padding-left: 56px; }
-#outline a[data-depth="5"] { padding-left: 68px; }
+body > #outline a[data-depth="1"] { padding-left: 20px; }
+body > #outline a[data-depth="2"] { padding-left: 32px; }
+body > #outline a[data-depth="3"] { padding-left: 44px; }
+body > #outline a[data-depth="4"] { padding-left: 56px; }
+body > #outline a[data-depth="5"] { padding-left: 68px; }
 
 @media (min-width: 1240px) {
   body.outline-open {
     padding-left: 280px;
   }
 
-  #outline {
+  body > #outline {
     box-shadow: none;
   }
 }
@@ -521,9 +523,9 @@ body {
 
 @media print {
   /* Long lines wrap on paper, which would put the line numbers out of line. */
-  #status,
-  #outline,
-  #outline-toggle,
+  body > #status,
+  body > #outline,
+  body > #outline-toggle,
   .copy-code,
   .line-numbers {
     display: none !important;

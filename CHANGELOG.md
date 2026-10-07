@@ -7,6 +7,18 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Fixed
+
+- A heading named "Status" or "Outline", or HTML with one of those ids, is
+  no longer drawn as the page's status message or outline, and a link to it
+  or to a heading named "Content" goes to the heading
+- Scroll sync is no longer thrown off by a collapsed `<details>` block:
+  the preview and the Neovim window went to the wrong place below it
+- A task checkbox that was clicked in the preview shows the state of the
+  buffer again when the item changes in Neovim
+- `.mp3`, `.ogg`, `.wav`, `.m4a`, `.flac` and `.mov` files are served with
+  their type, so `<audio>` and `<video>` can play them
+
 ## [0.4.1] - 2026-10-06
 
 ### Changed

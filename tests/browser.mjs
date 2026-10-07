@@ -228,6 +228,13 @@ try {
   await page.eval(`${taskBox}.click()`);
   const ticked = await waitFor(async () => (await bufferTask()) === "- [x] Something still to do");
   check("clicking a task checkbox ticks the item in the buffer", ticked, await bufferTask());
+  // The click ticked the box in the page already: only a change made in
+  // Neovim tells that the box follows the buffer.
+  const setTask = (mark) =>
+    nvim.lua(`vim.api.nvim_buf_set_lines(0, ${taskLine}, ${taskLine + 1}, false, { "- [${mark}] Something still to do" })`);
+  await setTask(" ");
+  check("a checkbox that was clicked still follows the buffer", await waitFor(() => page.eval(`!${taskBox}.checked`)));
+  await setTask("x");
   check("the preview shows the ticked item", await waitFor(() => page.eval(`${taskBox}.checked`)));
   await page.eval(`${taskBox}.click()`);
   check(
@@ -568,6 +575,78 @@ try {
   await waitFor(() => page.eval(`document.querySelector("h1")?.textContent === "mdlive demo"`), { timeout: 10000 });
   await nvim.lua(`vim.api.nvim_buf_set_lines(0, ${beforeWiki}, -1, false, {})`);
   await waitFor(() => page.eval(`!document.querySelector("#content a.wikilink")`));
+
+  // Ids of the page, collapsed blocks ----------------------------------------
+
+  // The page has elements with the ids "status", "outline" and "content".
+  const beforeIds = await nvim.lua("return vim.api.nvim_buf_line_count(0)");
+  const idLines = ["", "## Status", "", "## Outline", "", "## Content", "", "[status probe](#status)", ""];
+  idLines.push("<details>", "<summary>Collapsed probe</summary>", "");
+  for (let i = 1; i <= 40; i++) idLines.push(`- hidden item ${i}`);
+  idLines.push("", "</details>", "", "after the collapsed block");
+  for (let i = 1; i <= 60; i++) idLines.push("", `filler paragraph ${i}`);
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, -1, -1, false, vim.json.decode(${JSON.stringify(JSON.stringify(idLines))}))`);
+  await waitFor(() => page.eval(`Array.from(document.querySelectorAll("#content p")).some((p) => p.textContent === "filler paragraph 60")`));
+  const named = await page.eval(`({
+    headings: ["status", "outline", "content"].map((id) => {
+      const heading = document.querySelector("#content h2#" + id);
+      return heading && getComputedStyle(heading).position + " " + (heading.getBoundingClientRect().width > 400);
+    }),
+    page: ["status", "outline"].map((id) => getComputedStyle(document.getElementById(id)).position),
+  })`);
+  check(
+    "headings named like parts of the page are not styled as them",
+    named.headings.every((style) => style === "static true") && named.page.every((position) => position === "fixed"),
+    named,
+  );
+  await nvim.keys("<Esc>gg");
+  await waitFor(() => page.eval("scrollY === 0"));
+  await page.eval(`Array.from(document.querySelectorAll("#content a")).find((a) => a.textContent === "status probe").click()`);
+  const anchored = await waitFor(() =>
+    page.eval(`(() => {
+      const { top } = document.querySelector("#content h2#status").getBoundingClientRect();
+      return scrollY > 0 && top >= 0 && top < innerHeight && location.hash === "#status";
+    })()`),
+  );
+  check("a link to such a heading goes to the heading", anchored, await page.eval(`[scrollY, location.hash]`));
+  // Going there scrolls the Neovim window too: wait for that before moving on.
+  await waitFor(async () => (await nvim.lua(`return vim.fn.line("w0")`)) > 1);
+  await sleep(1000);
+
+  // The blocks inside a closed <details> are not on the page.
+  await nvim.keys("gg");
+  await waitFor(() => page.eval("scrollY === 0"));
+  const afterBlock = `Array.from(document.querySelectorAll("#content p")).find((p) => p.textContent === "after the collapsed block")`;
+  const afterBlockLine = await page.eval(`Number(${afterBlock}.dataset.line)`);
+  await page.eval(`window.scrollTo(0, ${afterBlock}.getBoundingClientRect().top + scrollY)`);
+  const belowBlock = await waitFor(async () => {
+    const top = await nvim.lua(`return vim.fn.line("w0")`);
+    return top > 1 && top;
+  });
+  check(
+    "scrolling the preview below a collapsed block scrolls Neovim to the same line",
+    belowBlock === afterBlockLine + 1,
+    { belowBlock, afterBlockLine },
+  );
+  await sleep(1000);
+  await nvim.keys("gg");
+  await waitFor(() => page.eval("scrollY === 0"));
+  await nvim.keys("/hidden item 20<CR>");
+  const atBlock = await waitFor(() =>
+    page.eval(`(() => {
+      const { top } = document.querySelector("#content details:not(.front-matter)").getBoundingClientRect();
+      return scrollY > 0 && top > -150 && top < innerHeight;
+    })()`),
+  );
+  check(
+    "the cursor inside a collapsed block scrolls the preview to the block",
+    atBlock,
+    await page.eval(`document.querySelector("#content details:not(.front-matter)").getBoundingClientRect().top`),
+  );
+  await nvim.keys("gg");
+  await nvim.lua(`vim.api.nvim_buf_set_lines(0, ${beforeIds}, -1, false, {})`);
+  await waitFor(() => page.eval(`!document.querySelector("#content h2#status")`));
+  await page.eval(`history.replaceState(null, "", location.pathname)`);
 
   // Status messages ----------------------------------------------------------
 
