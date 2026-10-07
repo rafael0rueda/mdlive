@@ -608,11 +608,21 @@ function M.broadcast(bufnr, event, data)
   end
 end
 
---- Closes every browser connection for a buffer.
+--- Closes every browser connection for a buffer, after sending them `event`
+--- if one is given. They stop counting as connected right away.
 ---@param bufnr integer
-function M.disconnect(bufnr)
+---@param event? string
+---@param data? table
+function M.disconnect(bufnr, event, data)
+  local payload = event and frame(event, data or vim.empty_dict())
   for sock in pairs(state.clients[bufnr] or {}) do
-    close(sock)
+    if payload and not sock:is_closing() then
+      sock:write(payload, function()
+        close(sock)
+      end)
+    else
+      close(sock)
+    end
   end
   state.clients[bufnr] = nil
 end

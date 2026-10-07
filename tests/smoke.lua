@@ -67,6 +67,14 @@ local ok, err = xpcall(function()
   local function get(path, extra)
     return curl(path, extra)()
   end
+  -- A stream of the buffer's events, once it is connected.
+  local function connected(bufnr, seconds)
+    local events_stream = curl(session .. "/events/" .. bufnr, { "-N" }, seconds or 1)
+    vim.wait(2000, function()
+      return require("mdlive.server").client_count(bufnr) > 0
+    end, 10)
+    return events_stream
+  end
 
   local code, body = get(session .. "/preview/" .. buf)
   check("serves index.html", code == 200 and body:find("preview.js", 1, true), code)
@@ -229,13 +237,11 @@ local ok, err = xpcall(function()
   )
 
   -- Live stream: connect, edit the buffer, move the cursor, then read what arrived.
-  local stream = curl(session .. "/events/" .. buf, { "-N" }, 1.5)
-  vim.wait(300)
+  local stream = connected(buf, 1.5)
   opened = nil
   vim.cmd("MdLive")
   check("MdLive reuses a connected tab", opened == nil, opened)
   vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "# Edited live" })
-  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
   vim.api.nvim_win_set_cursor(0, { 3, 0 })
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
   local _, events = stream()
@@ -278,17 +284,16 @@ local ok, err = xpcall(function()
     vim.inspect(view)
   )
 
-  -- TextChanged without a change to the text sends nothing new.
-  local idle_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
-  vim.wait(300)
-  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  -- Nothing new is sent while the text does not change.
+  local idle_stream = connected(buf, 1)
+  vim.api.nvim_win_set_cursor(0, { 4, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
   local _, idle_events = idle_stream()
   local _, content_events = idle_events:gsub("event: content", "")
   check("unchanged buffer is not sent again", content_events == 1, content_events)
 
   -- setup() again: open previews get the new options, and wrong options are reported.
-  local settings_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
-  vim.wait(300)
+  local settings_stream = connected(buf, 1)
   local warnings = {}
   local real_notify = vim.notify
   ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
@@ -316,8 +321,7 @@ local ok, err = xpcall(function()
   -- and a file that cannot be read is reported.
   local css_file = vim.fs.normalize(vim.fn.tempname()) .. ".css"
   vim.fn.writefile({ ".markdown-body { max-width: 600px; }" }, css_file)
-  local css_stream = curl(session .. "/events/" .. buf, { "-N" }, 1.5)
-  vim.wait(300)
+  local css_stream = connected(buf, 1.5)
   setup({ css = css_file })
   vim.cmd.split(css_file)
   vim.api.nvim_buf_set_lines(0, 0, -1, false, { ".markdown-body { max-width: 700px; }" })
@@ -536,8 +540,7 @@ local ok, err = xpcall(function()
   local out_dir = vim.fs.normalize(vim.fn.tempname())
   vim.fn.mkdir(out_dir, "p")
   local export_path = out_dir .. "/demo.html"
-  local export_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
-  vim.wait(300)
+  local export_stream = connected(buf, 1)
   local exports_done = {}
   local function on_export_done(err, path)
     table.insert(exports_done, { err = err, path = path })
@@ -615,8 +618,7 @@ local ok, err = xpcall(function()
 
   -- A write that fails is reported instead of announced as exported.
   if vim.uv.fs_stat("/dev/full") then
-    local full_stream = curl(session .. "/events/" .. buf, { "-N" }, 1)
-    vim.wait(300)
+    local full_stream = connected(buf, 1)
     messages = {}
     exports_done = {}
     require("mdlive").export(buf, { path = "/dev/full", force = true }, on_export_done)
@@ -646,8 +648,7 @@ local ok, err = xpcall(function()
 
   -- Follow mode: a connected tab switches to the markdown buffer you enter.
   opened = nil
-  local follow_stream = curl(session .. "/events/" .. buf, { "-N" }, 1.5)
-  vim.wait(300)
+  local follow_stream = connected(buf, 1.5)
   vim.cmd.edit(root .. "/examples/docs/guide.md")
   guide = vim.api.nvim_get_current_buf()
   local _, follow_events = follow_stream()
@@ -663,8 +664,7 @@ local ok, err = xpcall(function()
   )
 
   -- LSP hover popups are markdown buffers in floating windows: not followed.
-  local float_stream = curl(session .. "/events/" .. guide, { "-N" }, 1)
-  vim.wait(300)
+  local float_stream = connected(guide, 1)
   local scratch = vim.api.nvim_create_buf(false, true)
   vim.bo[scratch].filetype = "markdown"
   local float = vim.api.nvim_open_win(scratch, true, { relative = "editor", row = 1, col = 1, width = 20, height = 3 })
@@ -674,6 +674,63 @@ local ok, err = xpcall(function()
     "follow ignores floating windows",
     not float_events:find("event: switch", 1, true) and require("mdlive").is_enabled({ buf = guide }),
     float_events
+  )
+
+  -- A change made from outside the buffer, as a formatter or an LSP rename does.
+  local outside_stream = connected(guide)
+  vim.cmd.enew()
+  vim.api.nvim_buf_set_lines(guide, -1, -1, false, { "", "changed from another buffer" })
+  local _, outside_events = outside_stream()
+  check(
+    "a change made while in another buffer reaches the preview",
+    outside_events:find("changed from another buffer", 1, true),
+    outside_events:sub(-200)
+  )
+  vim.cmd.buffer(guide)
+
+  -- :edit! unloads the buffer and loads it again.
+  local reload_stream = connected(guide)
+  vim.cmd("edit!")
+  vim.wait(100)
+  vim.api.nvim_buf_set_lines(guide, -1, -1, false, { "", "changed after the reload" })
+  local _, reload_events = reload_stream()
+  check(
+    ":edit! keeps the preview, which goes on following the buffer",
+    require("mdlive").is_enabled({ buf = guide })
+      and not reload_events:find("event: close", 1, true)
+      and not reload_events:find("changed from another buffer\n\nchanged after", 1, true)
+      and reload_events:find("changed after the reload", 1, true),
+    reload_events:sub(-300)
+  )
+  vim.cmd("edit!")
+
+  -- Buffers entered one right after the other, before the tab had the time to
+  -- reconnect: it is sent on to the last one from wherever it connects.
+  vim.fn.writefile({ "# Hop" }, notes .. "/hop.md")
+  local hop_buf = vim.fn.bufadd(notes .. "/hop.md")
+  local hop_stream = connected(guide, 0.5)
+  vim.cmd.buffer(buf)
+  vim.cmd.buffer(hop_buf)
+  local _, hop_events = hop_stream()
+  local _, late_events = curl(session .. "/events/" .. buf, { "-N" }, 0.5)()
+  check(
+    "follow keeps up with buffers entered one right after the other",
+    hop_events:find('event: switch\ndata: {"bufnr":' .. buf .. "}", 1, true)
+      and late_events:find('event: switch\ndata: {"bufnr":' .. hop_buf .. "}", 1, true)
+      and require("mdlive").is_enabled({ buf = hop_buf })
+      and not require("mdlive").is_enabled({ buf = buf }),
+    vim.inspect({ hop_events:sub(-80), late_events:sub(-80) })
+  )
+
+  -- Stopped and started in one go: the tab that was told to close does not count.
+  local stop_stream = connected(hop_buf, 0.5)
+  opened = nil
+  vim.cmd("MdLive stop | MdLive")
+  local _, stop_events = stop_stream()
+  check(
+    "a preview stopped and started at once opens a tab again",
+    opened ~= nil and stop_events:find("event: close", 1, true),
+    vim.inspect({ opened, stop_events:sub(-80) })
   )
 
   -- :MdLive stop from a buffer that is not previewed stops the followed preview (and any other).
