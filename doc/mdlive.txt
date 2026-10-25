@@ -258,7 +258,8 @@ css                                                        *mdlive-config-css*
 The functions are in the `mdlive` module. Where they take a buffer, `0` means
 the current buffer. Errors are returned, as a second value after `nil`, and
 not shown: the functions say nothing, and the commands report what they did
-with |vim.notify()|. |mdlive.setup()| does warn about options it refuses.
+with |vim.notify()|. |mdlive.setup()| does warn about options it refuses,
+and about a `css` file it cannot read.
 
 mdlive.setup({opts}?)                                         *mdlive.setup()*
     Sets the options, see |mdlive-configuration|. Only needed to change them.
