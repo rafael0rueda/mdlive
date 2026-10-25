@@ -7,6 +7,8 @@ can change or remove features.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-25
+
 ### Fixed
 
 - `:MdLive export` shows the URL of the preview it opens again, with
@@ -228,7 +230,8 @@ Markdown files are treated as untrusted input:
 - `open()`, `close()`, `toggle()` and `is_open()` still work, warn once, and
   will be removed in 1.0. Use `enable()` and `is_enabled()`
 
-[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/rafael0rueda/mdlive/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/rafael0rueda/mdlive/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rafael0rueda/mdlive/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/rafael0rueda/mdlive/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/rafael0rueda/mdlive/compare/v0.3.0...v0.4.0
