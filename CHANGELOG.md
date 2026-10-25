@@ -12,6 +12,10 @@ can change or remove features.
 - `:MdLive export` shows the URL of the preview it opens again, with
   `browser = false` or when the browser could not be started: 0.5.0 left
   it out, and the export timed out with no tab to render it
+- The deprecated `open()` and `toggle()` show what they did and their
+  errors again, as before 0.5.0
+- The hint of the deprecated `toggle()` called with a buffer names that
+  buffer, not the current one
 
 ## [0.5.0] - 2026-10-06
 

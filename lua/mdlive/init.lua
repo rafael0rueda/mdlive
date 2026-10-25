@@ -787,7 +787,8 @@ function M.setup(opts)
   end
 end
 
--- Deprecated names, kept working until 1.0.
+-- Deprecated names, kept working until 1.0. open() and toggle() still show
+-- what they did before enable() stopped showing anything.
 local function deprecate(name, alternative)
   vim.deprecate(name, alternative, "1.0", "mdlive", false)
 end
@@ -797,7 +798,7 @@ end
 ---@param bufnr? integer
 function M.open(bufnr)
   deprecate("mdlive.open()", "mdlive.enable()")
-  M.enable(true, { buf = bufnr or 0 })
+  M._enable_and_report(true, { buf = bufnr or 0 })
 end
 
 --- Deprecated: use mdlive.enable(false).
@@ -812,13 +813,16 @@ function M.close(bufnr)
   M.enable(false, { buf = bufnr or 0 })
 end
 
---- Deprecated: use mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 }).
+--- Deprecated: use mdlive.enable(not mdlive.is_enabled({ buf = bufnr }), { buf = bufnr }).
 ---@deprecated
 ---@param bufnr? integer
 function M.toggle(bufnr)
-  deprecate("mdlive.toggle()", "mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 })")
+  -- The same buffer in both, or the replacement stops every preview.
+  local buf = (bufnr == nil or bufnr == 0) and "0" or "bufnr"
+  local alternative = ("mdlive.enable(not mdlive.is_enabled({ buf = %s }), { buf = %s })"):format(buf, buf)
+  deprecate("mdlive.toggle()", alternative)
   local filter = { buf = resolve_buf(bufnr) }
-  M.enable(not M.is_enabled(filter), filter)
+  M._enable_and_report(not M.is_enabled(filter), filter)
 end
 
 --- Deprecated: use mdlive.is_enabled().

@@ -1182,8 +1182,27 @@ local ok, err = xpcall(function()
   vim.cmd.buffer(buf)
   mdlive.open()
   check("deprecated open() starts the preview", mdlive.is_open() and mdlive.is_open(buf))
+  check(
+    "deprecated open() still says what it did",
+    vim.tbl_contains(deprecation_messages, "[mdlive] previewing demo.md"),
+    vim.inspect(deprecation_messages)
+  )
   mdlive.toggle()
   check("deprecated toggle() stops the preview", not mdlive.is_enabled({ buf = buf }))
+  -- The hint for another buffer than the current one is said once more.
+  vim.cmd.buffer(guide)
+  mdlive.toggle(buf)
+  check("deprecated toggle(bufnr) starts that buffer's preview", mdlive.is_enabled({ buf = buf }))
+  local guide_messages = #deprecation_messages
+  mdlive.open(-1)
+  check(
+    "deprecated open() still shows its errors",
+    #deprecation_messages == guide_messages + 1
+      and deprecation_messages[#deprecation_messages] == "[mdlive] invalid buffer -1",
+    vim.inspect(deprecation_messages)
+  )
+  mdlive.toggle(buf)
+  vim.cmd.buffer(buf)
   mdlive.open(buf)
   mdlive.close(buf)
   check("deprecated close() stops the preview", not mdlive.is_enabled())
@@ -1191,10 +1210,15 @@ local ok, err = xpcall(function()
   local deprecations = table.concat(deprecation_messages, "\n")
   check(
     "deprecated functions warn once each",
-    select(2, deprecations:gsub("is deprecated", "")) == 4
+    select(2, deprecations:gsub("is deprecated", "")) == 5
       and deprecations:find("mdlive.open() is deprecated, use mdlive.enable() instead", 1, true)
       -- The same buffer in both, or it would stop every preview.
-      and deprecations:find("use mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 }) instead", 1, true),
+      and deprecations:find("use mdlive.enable(not mdlive.is_enabled({ buf = 0 }), { buf = 0 }) instead", 1, true)
+      and deprecations:find(
+        "use mdlive.enable(not mdlive.is_enabled({ buf = bufnr }), { buf = bufnr }) instead",
+        1,
+        true
+      ),
     deprecations
   )
 
