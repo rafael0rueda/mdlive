@@ -957,6 +957,27 @@ local ok, err = xpcall(function()
   )
   vim.cmd("MdLive stop")
   check(":MdLive stop says so when there is no preview", said[#said] == "[mdlive] no preview to stop", said[#said])
+  -- A stop that fails is reported as such.
+  mdlive.enable(true, { buf = guide })
+  local real_has = vim.fn.has
+  ---@diagnostic disable-next-line: duplicate-set-field -- pretend Neovim is too old
+  vim.fn.has = function(feature)
+    return feature == "nvim-0.11" and 0 or real_has(feature)
+  end
+  local unsupported = {}
+  for _, line in ipairs({ "MdLive stop", "MdLive toggle" }) do
+    said = {}
+    local ran = pcall(vim.cmd --[[@as function]], line)
+    unsupported[line] = ran and #said == 1 and said[1]:find("requires Neovim 0.11", 1, true) ~= nil
+  end
+  vim.fn.has = real_has
+  check(
+    ":MdLive stop and toggle report why they could not stop, not that they did",
+    unsupported["MdLive stop"] and unsupported["MdLive toggle"] and mdlive.is_enabled({ buf = guide }),
+    vim.inspect({ unsupported, said })
+  )
+  mdlive.enable(false)
+  vim.wait(200)
   vim.notify = real_say
   mdlive.enable(true, { buf = buf })
   vim.wait(200)
