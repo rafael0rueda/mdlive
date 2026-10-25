@@ -21,6 +21,8 @@ can change or remove features.
   the URL. `enable()` and `export()` return as usual
 - The message for a browser program that cannot be started no longer
   includes a place in Neovim's own code
+- `:MdLive stop` and `:MdLive toggle` show the error when stopping the
+  preview fails, instead of saying it stopped
 
 ## [0.5.0] - 2026-10-06
 

@@ -23,8 +23,9 @@ local subcommands = {
         return notify("no preview to stop")
       end
       -- From a buffer without a preview, this stops every preview, such as the one following you.
-      mdlive.enable(false, mdlive.is_enabled({ buf = 0 }) and { buf = 0 } or nil)
-      notify("preview stopped")
+      if mdlive._enable_and_report(false, mdlive.is_enabled({ buf = 0 }) and { buf = 0 } or nil) then
+        notify("preview stopped")
+      end
     end,
   },
   toggle = {
@@ -36,8 +37,7 @@ local subcommands = {
       if on and require("mdlive.server").tabs_closed(vim.api.nvim_get_current_buf()) then
         return mdlive._enable_and_report(true, { buf = 0 })
       end
-      mdlive._enable_and_report(not on, { buf = 0 })
-      if on then
+      if mdlive._enable_and_report(not on, { buf = 0 }) and on then
         notify("preview stopped")
       end
     end,
