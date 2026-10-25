@@ -7,6 +7,12 @@ can change or remove features.
 
 ## [Unreleased]
 
+### Fixed
+
+- `:MdLive export` shows the URL of the preview it opens again, with
+  `browser = false` or when the browser could not be started: 0.5.0 left
+  it out, and the export timed out with no tab to render it
+
 ## [0.5.0] - 2026-10-06
 
 ### Changed

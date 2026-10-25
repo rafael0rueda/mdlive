@@ -93,7 +93,8 @@ Calling |mdlive.setup()| is optional: the commands work with the defaults.
     file with an `.html` extension, and `%` and `~` in it are expanded as for
     |:write|. With [!], an existing file is overwritten. The page is
     rendered by the browser, so a preview tab is opened first if none is
-    connected. See |mdlive-export|.
+    connected, which shows the URL as |:MdLive-start| does when it has to be
+    opened by hand. See |mdlive-export|.
     As |:MdLive| can be followed by another command, a `"` starts a comment:
     write `\"` for one in a file name. `:MdLive export "page.html"` exports
     to the default file.

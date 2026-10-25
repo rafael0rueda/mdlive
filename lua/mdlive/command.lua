@@ -66,19 +66,7 @@ local subcommands = {
         end
         path = expanded
       end
-      -- What export() refuses is said at once; its callback gets that too, later.
-      local refused = false
-      local ok, err = require("mdlive").export(0, { path = path, force = bang }, function(export_err, written)
-        if not export_err then
-          notify("exported to " .. vim.fn.fnamemodify(written --[[@as string]], ":~:."))
-        elseif not refused then
-          notify(export_err, vim.log.levels.ERROR)
-        end
-      end)
-      if not ok then
-        refused = true
-        notify(err --[[@as string]], vim.log.levels.ERROR)
-      end
+      require("mdlive")._export_and_report(0, { path = path, force = bang })
     end,
   },
 }

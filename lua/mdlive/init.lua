@@ -650,18 +650,16 @@ function M.url(filter)
   return server.url(bufnr)
 end
 
---- Writes the rendered preview of `bufnr` to a standalone HTML file. The page
---- is rendered by the browser, so the preview is opened first if needed.
---- `opts.path` defaults to the buffer's file with an .html extension, and
---- `opts.force` overwrites an existing file. Returns true once the export is
---- queued, or nil and a message. `callback(err, path)` is called once, when the
---- file is written or the export fails; nothing is shown.
----@param bufnr? integer Buffer to export, 0 or nil for the current one.
+-- export(), which also returns what the preview it started has to say, and
+-- whether that is a warning, like enable_preview().
+---@param bufnr? integer
 ---@param opts? mdlive.ExportOpts
 ---@param callback? fun(err: string|nil, path: string|nil)
 ---@return true|nil ok
 ---@return string|nil err
-function M.export(bufnr, opts, callback)
+---@return string|nil message
+---@return boolean|nil warn
+local function export_buffer(bufnr, opts, callback)
   local path
   -- Every failure is returned and handed to the callback.
   local function fail(err)
@@ -698,12 +696,53 @@ function M.export(bufnr, opts, callback)
     return true
   end
   -- The export is sent once the tab connects.
-  ok, err = start_preview(bufnr)
+  local message, warn
+  ok, message, warn = start_preview(bufnr)
   if not ok then
     export.cancel(id)
-    return fail(err)
+    return fail(message)
   end
-  return true
+  return true, nil, message, warn
+end
+
+--- Writes the rendered preview of `bufnr` to a standalone HTML file. The page
+--- is rendered by the browser, so the preview is opened first if needed.
+--- `opts.path` defaults to the buffer's file with an .html extension, and
+--- `opts.force` overwrites an existing file. Returns true once the export is
+--- queued, or nil and a message. `callback(err, path)` is called once, when the
+--- file is written or the export fails; nothing is shown.
+---@param bufnr? integer Buffer to export, 0 or nil for the current one.
+---@param opts? mdlive.ExportOpts
+---@param callback? fun(err: string|nil, path: string|nil)
+---@return true|nil ok
+---@return string|nil err
+function M.export(bufnr, opts, callback)
+  local ok, err = export_buffer(bufnr, opts, callback)
+  return ok, err
+end
+
+--- What |:MdLive-export| runs: export(), with what it has to say shown with
+--- vim.notify(): an error at once, what the preview it started says, and later
+--- the file written or why the export failed.
+---@package
+---@param bufnr? integer
+---@param opts? mdlive.ExportOpts
+function M._export_and_report(bufnr, opts)
+  -- What export() refuses is said at once; its callback gets that too, later.
+  local refused = false
+  local ok, err, message, warn = export_buffer(bufnr, opts, function(export_err, written)
+    if not export_err then
+      notify("exported to " .. vim.fn.fnamemodify(written --[[@as string]], ":~:."))
+    elseif not refused then
+      notify(export_err, vim.log.levels.ERROR)
+    end
+  end)
+  if not ok then
+    refused = true
+    notify(err --[[@as string]], vim.log.levels.ERROR)
+  elseif message then
+    notify(message, warn and vim.log.levels.WARN or vim.log.levels.INFO)
+  end
 end
 
 --- Sets the options (see :help mdlive-configuration) and applies them to open previews.
