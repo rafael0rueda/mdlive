@@ -656,6 +656,31 @@ local ok, err = xpcall(function()
     vim.inspect({ refused_err, exports_done })
   )
 
+  -- With no tab to render it, :MdLive export starts the preview and says what
+  -- that has to say: with browser = false, the URL to open.
+  vim.wait(2000, function()
+    return require("mdlive.server").client_count(buf) == 0
+  end, 10)
+  local real_browser = require("mdlive.config").options.browser
+  require("mdlive.config").options.browser = false
+  messages = {}
+  vim.cmd("MdLive! export " .. out_dir .. "/remote.html")
+  check(
+    ":MdLive export shows the URL of the preview it started",
+    #messages == 1 and messages[1]:find(" at " .. require("mdlive.server").url(buf), 1, true),
+    vim.inspect(messages)
+  )
+  local remote_stream = connected(buf, 1)
+  local _, remote_events = remote_stream()
+  local remote_job = remote_events:match("event: export\ndata: ([^\n]*)")
+  remote_job = remote_job and vim.json.decode(remote_job)
+  get(session .. "/export/" .. (remote_job and remote_job.id or 0), send_page)
+  vim.wait(500, function()
+    return #messages > 1
+  end, 10)
+  check(":MdLive export then reports the file", (messages[2] or ""):find("exported to", 1, true), vim.inspect(messages))
+  require("mdlive.config").options.browser = real_browser
+
   -- A write that fails is reported instead of announced as exported.
   if vim.uv.fs_stat("/dev/full") then
     local full_stream = connected(buf, 1)
