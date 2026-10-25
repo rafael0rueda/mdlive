@@ -92,8 +92,9 @@ test, `windows` tells which platform it runs on.
   line endings of the other files.
 - Augroups and server handlers are named following Neovim's dev guide.
 - Errors go back to Lua callers as `nil, err`, and the public functions show
-  nothing. The commands and `auto_open` report, with `vim.notify()` and the
-  `[mdlive]` prefix: errors, and what a preview that started has to say.
+  nothing, except `setup()`, which warns about problems in the options. The
+  commands and `auto_open` report, with `vim.notify()` and the `[mdlive]`
+  prefix: errors, and what a preview that started has to say.
 - `app/preview.js` is plain JavaScript in one IIFE with `"use strict"`: no
   build step, no modules, no npm. Its types come from JSDoc comments
   (`/** @type {...} */`), and the check includes `strictNullChecks`: a value
