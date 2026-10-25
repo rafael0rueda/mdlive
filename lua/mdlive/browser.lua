@@ -106,8 +106,12 @@ function M.open(url)
     return false
   end
   if type(browser) == "function" then
-    -- Runs inside Neovim: the URL is not passed to another program.
-    browser(url)
+    -- Runs inside Neovim: the URL is not passed to another program. It is the
+    -- user's code, so where it failed is kept in the message.
+    local ok, err = pcall(browser, url)
+    if not ok then
+      return false, "the `browser` function failed: " .. tostring(err)
+    end
     return true
   end
   -- Everything below starts a program with the URL in its arguments. Writing
@@ -124,7 +128,8 @@ function M.open(url)
   if type(browser) == "table" then
     local ok, err = pcall(vim.system, vim.list_extend(vim.deepcopy(browser), { target }), { detach = true })
     if not ok then
-      return false, "could not start the browser: " .. tostring(err)
+      -- Without the place in Neovim's code that threw: "vim/_core/system:324: ENOENT: ..."
+      return false, "could not start the browser: " .. tostring(err):gsub("^[^\n]-:%d+: ", "")
     end
     return true
   end
