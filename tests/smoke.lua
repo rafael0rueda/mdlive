@@ -1102,6 +1102,50 @@ local ok, err = xpcall(function()
   require("mdlive").enable(false)
   vim.wait(400)
 
+  -- A browser that cannot be started leaves the URL to open by hand, with why.
+  local browser_messages = {}
+  local real_browser_notify = vim.notify
+  ---@diagnostic disable-next-line: duplicate-set-field -- capture the messages
+  vim.notify = function(msg, level)
+    table.insert(browser_messages, { msg = msg, level = level })
+  end
+  for _, case in ipairs({
+    {
+      name = "a missing browser program",
+      browser = { "mdlive-no-such-browser" },
+      says = "could not start the browser",
+    },
+    {
+      name = "a browser function that fails",
+      browser = function()
+        error("no display")
+      end,
+      says = "`browser` function failed: .*no display",
+    },
+  }) do
+    setup({ browser = case.browser })
+    browser_messages = {}
+    local started, start_err = require("mdlive").enable(true, { buf = buf })
+    check("enable() previews despite " .. case.name, started == true and start_err == nil, start_err)
+    browser_messages = {}
+    vim.cmd("MdLive")
+    local said_msg = browser_messages[1] and browser_messages[1].msg or ""
+    check(
+      ":MdLive shows the URL and why with " .. case.name,
+      #browser_messages == 1
+        and browser_messages[1].level == vim.log.levels.WARN
+        and said_msg:find(require("mdlive.server").url(buf), 1, true)
+        and said_msg:find(case.says)
+        -- Not a place in Neovim's own code.
+        and not said_msg:find("vim/_core", 1, true),
+      said_msg
+    )
+    require("mdlive").enable(false)
+    vim.wait(400)
+  end
+  vim.notify = real_browser_notify
+  setup()
+
   -- Remote use: browser = false opens nothing, and :MdLiveUrl shows the URL
   -- and copies it through the clipboard provider.
   local real_open = vim.ui.open

@@ -16,6 +16,11 @@ can change or remove features.
   errors again, as before 0.5.0
 - The hint of the deprecated `toggle()` called with a buffer names that
   buffer, not the current one
+- A `browser` function that throws an error no longer stops `:MdLive`
+  halfway with a Lua error: the preview starts, and the error is shown with
+  the URL. `enable()` and `export()` return as usual
+- The message for a browser program that cannot be started no longer
+  includes a place in Neovim's own code
 
 ## [0.5.0] - 2026-10-06
 

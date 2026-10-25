@@ -178,8 +178,10 @@ browser                                                *mdlive-config-browser*
     Opens the preview. `nil` uses the system default browser through
     |vim.ui.open()|. A string such as `"firefox"` or a list such as
     `{ "firefox", "--new-window" }` is run with the URL appended. A function
-    receives the URL. `false` opens nothing: |:MdLive| and |:MdLive-url| show
-    the URL to open yourself, for example over SSH (see |mdlive-remote|).
+    receives the URL; if it throws an error, the preview still starts and
+    |:MdLive| shows the error with the URL. `false` opens nothing: |:MdLive|
+    and |:MdLive-url| show the URL to open yourself, for example over SSH
+    (see |mdlive-remote|).
 
 browser_redirect                              *mdlive-config-browser_redirect*
     Type: `boolean`, default: `true`
